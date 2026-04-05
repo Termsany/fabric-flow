@@ -1,0 +1,1978 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Textile ERP API - نظام إدارة رولات القماش
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management
+  - name: tenants
+    description: Tenant management
+  - name: production-orders
+    description: Production order management
+  - name: fabric-rolls
+    description: Fabric roll management
+  - name: qc
+    description: Quality control
+  - name: dyeing
+    description: Dyeing operations
+  - name: warehouses
+    description: Warehouse management
+  - name: sales
+    description: Sales and customers
+  - name: dashboard
+    description: Dashboard and analytics
+  - name: billing
+    description: Subscription billing and Stripe operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # Auth
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register new tenant and admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Users
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users in tenant
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # Production Orders
+  /production-orders:
+    get:
+      operationId: listProductionOrders
+      tags: [production-orders]
+      summary: List production orders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of production orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductionOrder"
+    post:
+      operationId: createProductionOrder
+      tags: [production-orders]
+      summary: Create production order and generate rolls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductionOrderRequest"
+      responses:
+        "201":
+          description: Created production order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionOrder"
+
+  /production-orders/{id}:
+    get:
+      operationId: getProductionOrder
+      tags: [production-orders]
+      summary: Get production order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Production order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionOrder"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateProductionOrder
+      tags: [production-orders]
+      summary: Update production order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductionOrderRequest"
+      responses:
+        "200":
+          description: Updated production order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionOrder"
+
+  # Fabric Rolls
+  /fabric-rolls:
+    get:
+      operationId: listFabricRolls
+      tags: [fabric-rolls]
+      summary: List fabric rolls
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: color
+          in: query
+          schema:
+            type: string
+        - name: gsm
+          in: query
+          schema:
+            type: number
+        - name: productionOrderId
+          in: query
+          schema:
+            type: integer
+        - name: warehouseId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of fabric rolls
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FabricRoll"
+
+  /fabric-rolls/{id}:
+    get:
+      operationId: getFabricRoll
+      tags: [fabric-rolls]
+      summary: Get fabric roll
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fabric roll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FabricRoll"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateFabricRoll
+      tags: [fabric-rolls]
+      summary: Update fabric roll
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFabricRollRequest"
+      responses:
+        "200":
+          description: Updated fabric roll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FabricRoll"
+
+  /fabric-rolls/by-code/{rollCode}:
+    get:
+      operationId: getFabricRollByCode
+      tags: [fabric-rolls]
+      summary: Get fabric roll by roll code (for QR scan)
+      parameters:
+        - name: rollCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Fabric roll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FabricRoll"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # QC Reports
+  /qc-reports:
+    get:
+      operationId: listQcReports
+      tags: [qc]
+      summary: List QC reports
+      parameters:
+        - name: fabricRollId
+          in: query
+          schema:
+            type: integer
+        - name: result
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of QC reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QcReport"
+    post:
+      operationId: createQcReport
+      tags: [qc]
+      summary: Create QC report for a roll
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQcReportRequest"
+      responses:
+        "201":
+          description: Created QC report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QcReport"
+
+  /qc-reports/{id}:
+    get:
+      operationId: getQcReport
+      tags: [qc]
+      summary: Get QC report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: QC report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QcReport"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateQcReport
+      tags: [qc]
+      summary: Update QC report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQcReportRequest"
+      responses:
+        "200":
+          description: Updated QC report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QcReport"
+
+  # Dyeing Orders
+  /dyeing-orders:
+    get:
+      operationId: listDyeingOrders
+      tags: [dyeing]
+      summary: List dyeing orders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of dyeing orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DyeingOrder"
+    post:
+      operationId: createDyeingOrder
+      tags: [dyeing]
+      summary: Create dyeing order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDyeingOrderRequest"
+      responses:
+        "201":
+          description: Created dyeing order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DyeingOrder"
+
+  /dyeing-orders/{id}:
+    get:
+      operationId: getDyeingOrder
+      tags: [dyeing]
+      summary: Get dyeing order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dyeing order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DyeingOrder"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateDyeingOrder
+      tags: [dyeing]
+      summary: Update dyeing order status/details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDyeingOrderRequest"
+      responses:
+        "200":
+          description: Updated dyeing order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DyeingOrder"
+
+  # Warehouses
+  /warehouses:
+    get:
+      operationId: listWarehouses
+      tags: [warehouses]
+      summary: List warehouses
+      responses:
+        "200":
+          description: List of warehouses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Warehouse"
+    post:
+      operationId: createWarehouse
+      tags: [warehouses]
+      summary: Create warehouse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWarehouseRequest"
+      responses:
+        "201":
+          description: Created warehouse
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Warehouse"
+
+  /warehouses/{id}:
+    get:
+      operationId: getWarehouse
+      tags: [warehouses]
+      summary: Get warehouse
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Warehouse
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Warehouse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateWarehouse
+      tags: [warehouses]
+      summary: Update warehouse
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWarehouseRequest"
+      responses:
+        "200":
+          description: Updated warehouse
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Warehouse"
+
+  # Warehouse movements
+  /warehouse-movements:
+    get:
+      operationId: listWarehouseMovements
+      tags: [warehouses]
+      summary: List warehouse movements
+      parameters:
+        - name: fabricRollId
+          in: query
+          schema:
+            type: integer
+        - name: warehouseId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of warehouse movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WarehouseMovement"
+    post:
+      operationId: createWarehouseMovement
+      tags: [warehouses]
+      summary: Move roll between warehouses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWarehouseMovementRequest"
+      responses:
+        "201":
+          description: Created movement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarehouseMovement"
+
+  # Customers
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [sales]
+      summary: List customers
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+    post:
+      operationId: createCustomer
+      tags: [sales]
+      summary: Create customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+      responses:
+        "201":
+          description: Created customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  /customers/{id}:
+    get:
+      operationId: getCustomer
+      tags: [sales]
+      summary: Get customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateCustomer
+      tags: [sales]
+      summary: Update customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomerRequest"
+      responses:
+        "200":
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  # Sales Orders
+  /sales-orders:
+    get:
+      operationId: listSalesOrders
+      tags: [sales]
+      summary: List sales orders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: customerId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of sales orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SalesOrder"
+    post:
+      operationId: createSalesOrder
+      tags: [sales]
+      summary: Create sales order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSalesOrderRequest"
+      responses:
+        "201":
+          description: Created sales order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+
+  /sales-orders/{id}:
+    get:
+      operationId: getSalesOrder
+      tags: [sales]
+      summary: Get sales order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sales order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSalesOrder
+      tags: [sales]
+      summary: Update sales order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSalesOrderRequest"
+      responses:
+        "200":
+          description: Updated sales order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+
+  # Dashboard
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard KPI statistics
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/roll-status-breakdown:
+    get:
+      operationId: getRollStatusBreakdown
+      tags: [dashboard]
+      summary: Get roll count by status
+      responses:
+        "200":
+          description: Roll status breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StatusCount"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/production-by-month:
+    get:
+      operationId: getProductionByMonth
+      tags: [dashboard]
+      summary: Get production count by month (last 6 months)
+      responses:
+        "200":
+          description: Production by month
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyCount"
+
+  # Audit Logs
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [dashboard]
+      summary: List audit logs
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
+  # Billing
+  /billing/subscription:
+    get:
+      operationId: getBillingSubscription
+      tags: [billing]
+      summary: Get tenant billing subscription snapshot
+      responses:
+        "200":
+          description: Billing subscription snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingSubscription"
+
+  /billing/checkout-session:
+    post:
+      operationId: createBillingCheckoutSession
+      tags: [billing]
+      summary: Create Stripe Checkout session for a subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCheckoutRequest"
+      responses:
+        "200":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingSessionResponse"
+
+  /billing/customer-portal:
+    post:
+      operationId: createBillingCustomerPortal
+      tags: [billing]
+      summary: Create Stripe customer portal session
+      responses:
+        "200":
+          description: Portal session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingSessionResponse"
+
+  /billing/webhook:
+    post:
+      operationId: handleBillingWebhook
+      tags: [billing]
+      summary: Handle Stripe webhook events
+      responses:
+        "200":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingWebhookResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    RegisterRequest:
+      type: object
+      properties:
+        companyName:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        fullName:
+          type: string
+      required:
+        - companyName
+        - email
+        - password
+        - fullName
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - token
+        - user
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - email
+        - fullName
+        - role
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+      required:
+        - email
+        - password
+        - fullName
+        - role
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        role:
+          type: string
+        isActive:
+          type: boolean
+        password:
+          type: string
+
+    ProductionOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        orderNumber:
+          type: string
+        fabricType:
+          type: string
+        gsm:
+          type: number
+        width:
+          type: number
+        rawColor:
+          type: string
+        quantity:
+          type: integer
+        status:
+          type: string
+        notes:
+          type: ["string", "null"]
+        rollsGenerated:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - orderNumber
+        - fabricType
+        - gsm
+        - width
+        - rawColor
+        - quantity
+        - status
+        - rollsGenerated
+        - createdAt
+        - updatedAt
+
+    CreateProductionOrderRequest:
+      type: object
+      properties:
+        fabricType:
+          type: string
+        gsm:
+          type: number
+        width:
+          type: number
+        rawColor:
+          type: string
+        quantity:
+          type: integer
+        notes:
+          type: string
+      required:
+        - fabricType
+        - gsm
+        - width
+        - rawColor
+        - quantity
+
+    UpdateProductionOrderRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        notes:
+          type: string
+
+    FabricRoll:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        rollCode:
+          type: string
+        batchId:
+          type: string
+        productionOrderId:
+          type: integer
+        warehouseId:
+          type: ["integer", "null"]
+        length:
+          type: number
+        weight:
+          type: number
+        color:
+          type: string
+        gsm:
+          type: number
+        width:
+          type: number
+        fabricType:
+          type: string
+        status:
+          type: string
+        qrCode:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - rollCode
+        - batchId
+        - productionOrderId
+        - length
+        - weight
+        - color
+        - gsm
+        - width
+        - fabricType
+        - status
+        - qrCode
+        - createdAt
+        - updatedAt
+
+    UpdateFabricRollRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        warehouseId:
+          type: integer
+        color:
+          type: string
+        length:
+          type: number
+        weight:
+          type: number
+        notes:
+          type: string
+
+    QcReport:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        fabricRollId:
+          type: integer
+        inspectedById:
+          type: integer
+        result:
+          type: string
+        defects:
+          type: ["string", "null"]
+        defectCount:
+          type: integer
+        images:
+          type: array
+          items:
+            type: string
+        notes:
+          type: ["string", "null"]
+        inspectedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - fabricRollId
+        - inspectedById
+        - result
+        - defectCount
+        - images
+        - inspectedAt
+        - createdAt
+        - updatedAt
+
+    CreateQcReportRequest:
+      type: object
+      properties:
+        fabricRollId:
+          type: integer
+        result:
+          type: string
+        defects:
+          type: string
+        defectCount:
+          type: integer
+        images:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+      required:
+        - fabricRollId
+        - result
+        - defectCount
+
+    UpdateQcReportRequest:
+      type: object
+      properties:
+        result:
+          type: string
+        defects:
+          type: string
+        defectCount:
+          type: integer
+        notes:
+          type: string
+
+    DyeingOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        orderNumber:
+          type: string
+        dyehouseName:
+          type: string
+        targetColor:
+          type: string
+        targetShade:
+          type: ["string", "null"]
+        status:
+          type: string
+        sentAt:
+          type: ["string", "null"]
+        receivedAt:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        rollIds:
+          type: array
+          items:
+            type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - orderNumber
+        - dyehouseName
+        - targetColor
+        - status
+        - rollIds
+        - createdAt
+        - updatedAt
+
+    CreateDyeingOrderRequest:
+      type: object
+      properties:
+        dyehouseName:
+          type: string
+        targetColor:
+          type: string
+        targetShade:
+          type: string
+        rollIds:
+          type: array
+          items:
+            type: integer
+        notes:
+          type: string
+      required:
+        - dyehouseName
+        - targetColor
+        - rollIds
+
+    UpdateDyeingOrderRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        targetShade:
+          type: string
+        receivedAt:
+          type: string
+        notes:
+          type: string
+
+    Warehouse:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        location:
+          type: string
+        capacity:
+          type: ["integer", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - name
+        - location
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateWarehouseRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        location:
+          type: string
+        capacity:
+          type: integer
+      required:
+        - name
+        - location
+
+    UpdateWarehouseRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        location:
+          type: string
+        capacity:
+          type: integer
+        isActive:
+          type: boolean
+
+    WarehouseMovement:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        fabricRollId:
+          type: integer
+        fromWarehouseId:
+          type: ["integer", "null"]
+        toWarehouseId:
+          type: ["integer", "null"]
+        movedById:
+          type: integer
+        reason:
+          type: ["string", "null"]
+        movedAt:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - fabricRollId
+        - movedById
+        - movedAt
+        - createdAt
+
+    CreateWarehouseMovementRequest:
+      type: object
+      properties:
+        fabricRollId:
+          type: integer
+        fromWarehouseId:
+          type: integer
+        toWarehouseId:
+          type: integer
+        reason:
+          type: string
+      required:
+        - fabricRollId
+        - toWarehouseId
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        taxNumber:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - name
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        taxNumber:
+          type: string
+      required:
+        - name
+
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        taxNumber:
+          type: string
+        isActive:
+          type: boolean
+
+    SalesOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        orderNumber:
+          type: string
+        customerId:
+          type: integer
+        status:
+          type: string
+        totalAmount:
+          type: number
+        notes:
+          type: ["string", "null"]
+        rollIds:
+          type: array
+          items:
+            type: integer
+        invoiceNumber:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - orderNumber
+        - customerId
+        - status
+        - totalAmount
+        - rollIds
+        - createdAt
+        - updatedAt
+
+    CreateSalesOrderRequest:
+      type: object
+      properties:
+        customerId:
+          type: integer
+        rollIds:
+          type: array
+          items:
+            type: integer
+        totalAmount:
+          type: number
+        notes:
+          type: string
+      required:
+        - customerId
+        - rollIds
+        - totalAmount
+
+    UpdateSalesOrderRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        totalAmount:
+          type: number
+        notes:
+          type: string
+        invoiceNumber:
+          type: string
+
+    DashboardStats:
+      type: object
+      properties:
+        totalRolls:
+          type: integer
+        inProduction:
+          type: integer
+        inQcPending:
+          type: integer
+        qcPassed:
+          type: integer
+        qcFailed:
+          type: integer
+        inDyeing:
+          type: integer
+        inStock:
+          type: integer
+        reserved:
+          type: integer
+        sold:
+          type: integer
+        activeProductionOrders:
+          type: integer
+        activeDyeingOrders:
+          type: integer
+        pendingSalesOrders:
+          type: integer
+        totalCustomers:
+          type: integer
+      required:
+        - totalRolls
+        - inProduction
+        - inQcPending
+        - qcPassed
+        - qcFailed
+        - inDyeing
+        - inStock
+        - reserved
+        - sold
+        - activeProductionOrders
+        - activeDyeingOrders
+        - pendingSalesOrders
+        - totalCustomers
+
+    StatusCount:
+      type: object
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+      required:
+        - status
+        - count
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        action:
+          type: string
+        description:
+          type: string
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - entityType
+        - entityId
+        - action
+        - description
+        - createdAt
+
+    MonthlyCount:
+      type: object
+      properties:
+        month:
+          type: string
+        count:
+          type: integer
+      required:
+        - month
+        - count
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        userId:
+          type: ["integer", "null"]
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        action:
+          type: string
+        changes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - tenantId
+        - entityType
+        - entityId
+        - action
+        - createdAt
+
+    BillingCheckoutRequest:
+      type: object
+      properties:
+        plan:
+          type: string
+          enum: [basic, pro, enterprise]
+        interval:
+          type: string
+          enum: [monthly, yearly]
+      required:
+        - plan
+
+    BillingSessionResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+      required:
+        - url
+
+    BillingWebhookResponse:
+      type: object
+      properties:
+        received:
+          type: boolean
+        duplicate:
+          type: boolean
+      required:
+        - received
+
+    BillingPlanDetails:
+      type: object
+      properties:
+        key:
+          type: string
+          enum: [basic, pro, enterprise]
+        name:
+          type: string
+        monthlyPriceId:
+          type: ["string", "null"]
+        yearlyPriceId:
+          type: ["string", "null"]
+        features:
+          type: array
+          items:
+            type: string
+      required:
+        - key
+        - name
+        - monthlyPriceId
+        - yearlyPriceId
+        - features
+
+    BillingUsage:
+      type: object
+      properties:
+        users:
+          type: integer
+        warehouses:
+          type: integer
+      required:
+        - users
+        - warehouses
+
+    BillingLimits:
+      type: object
+      properties:
+        users:
+          type: ["integer", "null"]
+        warehouses:
+          type: ["integer", "null"]
+      required:
+        - users
+        - warehouses
+
+    BillingSubscription:
+      type: object
+      properties:
+        tenantId:
+          type: integer
+        currentPlan:
+          type: string
+          enum: [basic, pro, enterprise]
+        subscriptionInterval:
+          type: ["string", "null"]
+          enum: [monthly, yearly, null]
+        billingStatus:
+          type: string
+          enum: [trialing, active, past_due, canceled, unpaid, incomplete]
+        stripeCustomerId:
+          type: ["string", "null"]
+        stripeSubscriptionId:
+          type: ["string", "null"]
+        subscriptionEndsAt:
+          type: ["string", "null"]
+        trialEndsAt:
+          type: ["string", "null"]
+        lastInvoiceStatus:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        usage:
+          $ref: "#/components/schemas/BillingUsage"
+        limits:
+          $ref: "#/components/schemas/BillingLimits"
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/BillingPlanDetails"
+      required:
+        - tenantId
+        - currentPlan
+        - subscriptionInterval
+        - billingStatus
+        - stripeCustomerId
+        - stripeSubscriptionId
+        - subscriptionEndsAt
+        - trialEndsAt
+        - lastInvoiceStatus
+        - isActive
+        - usage
+        - limits
+        - plans

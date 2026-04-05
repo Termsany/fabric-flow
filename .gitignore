@@ -1,0 +1,91 @@
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
+
+# Security: local environment and secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production
+.env.production.local
+artifacts/api-server/.env
+artifacts/api-server/.env.local
+artifacts/textile-erp/.env
+artifacts/textile-erp/.env.local
+!.env.example
+!.env.production.example
+!artifacts/api-server/.env.example
+!artifacts/textile-erp/.env.example
+
+# Security: certificates, keys, and secret material
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.kdbx
+*.asc
+docker/certs/
+
+# Security: runtime uploads and backups
+uploads/
+artifacts/api-server/uploads/
+backups/
+*.sql.gz
+*.dump
+*.bak
+
+# Local docker/runtime data
+postgres-data/
+pgdata/
+
+# OS / editor secrets and local overrides
+.direnv/
+.envrc

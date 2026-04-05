@@ -1,0 +1,130 @@
+Build a SaaS web application for textile roll management (ERP for fabric manufacturing).
+
+IMPORTANT:
+- The system MUST fully support Arabic language (RTL layout)
+- UI must support switching between Arabic and English
+- All labels, forms, and tables must be translatable
+- Default language: Arabic
+
+Tech Stack:
+- Backend: Node.js with Express (or NestJS if possible)
+- Frontend: React + Tailwind CSS
+- Database: PostgreSQL
+- Authentication: JWT
+- Architecture: Multi-tenant (tenant_id لكل شركة)
+
+Core Features:
+
+1) Authentication & Users
+- Login / Register
+- Role-based access control (Admin, Production, QC, Warehouse, Sales)
+- Multi-tenant support
+
+2) Production Orders
+- Create production orders
+- Fields:
+  - fabric_type
+  - GSM
+  - width
+  - raw_color
+  - quantity
+- Generate fabric rolls automatically
+
+3) Fabric Rolls Management (MAIN FEATURE)
+- Each roll has:
+  - roll_code (unique)
+  - QR code
+  - batch_id
+  - length (meters)
+  - weight (kg)
+  - color
+  - GSM
+  - status
+
+- Roll Status Lifecycle:
+  CREATED
+  IN_PRODUCTION
+  QC_PENDING
+  QC_PASSED
+  QC_FAILED
+  SENT_TO_DYEING
+  IN_DYEING
+  FINISHED
+  IN_STOCK
+  RESERVED
+  SOLD
+
+4) QC Module
+- Add QC report for each roll
+- Record defects
+- Upload images
+- Result: PASS / FAIL / SECOND
+
+5) Dyeing Module
+- Send rolls to dyehouse
+- Track dyeing status
+- Update color and shade
+
+6) Warehouse Module
+- Multi-warehouse support
+- Move rolls between locations
+- Track inventory
+- QR scan support
+
+7) Sales Module
+- Customers
+- Sales orders
+- Reserve rolls
+- Generate invoices
+
+8) Dashboard
+- KPIs:
+  - total rolls
+  - in production
+  - in dyeing
+  - in stock
+  - sold
+- Charts
+
+Arabic UI Requirements:
+- Use RTL layout (dir="rtl")
+- Arabic labels example:
+  - Dashboard = لوحة التحكم
+  - Fabric Rolls = رولات القماش
+  - Production Orders = أوامر الإنتاج
+  - Warehouse = المخزن
+  - Sales = المبيعات
+  - QC = الجودة
+
+UI Requirements:
+- Clean modern dashboard
+- Tables with filters (status, color, GSM)
+- Status badges with colors
+- QR code display
+
+Database Requirements:
+- Use PostgreSQL
+- Include tables:
+  - users
+  - tenants
+  - production_orders
+  - fabric_rolls
+  - qc_reports
+  - dyeing_orders
+  - warehouses
+  - sales_orders
+
+API Requirements:
+- REST API
+- CRUD for all modules
+- Secure endpoints with JWT
+
+Bonus:
+- Generate QR code for each roll
+- Add audit log for tracking changes
+
+Output:
+- Full project structure
+- Backend + Frontend code
+- Database schema
+- Example API endpoints
