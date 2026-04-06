@@ -88,3 +88,54 @@ docker compose --profile fullstack up --build
 - The frontend uses `VITE_API_URL` and a Vite dev proxy so `/api/*` works locally.
 - Stripe variables are only required when testing billing flows.
 - Admin registration creates the initial tenant and user for local testing.
+
+## Fly.io Production Deploy
+
+Deploy this project to Fly.io as two apps:
+
+- `textile-erp-api`
+- `textile-erp-web`
+
+### 1. Create the apps
+
+```bash
+fly apps create textile-erp-api
+fly apps create textile-erp-web
+```
+
+### 2. Set API secrets
+
+```bash
+fly secrets set -a textile-erp-api \
+  DATABASE_URL=postgresql://... \
+  JWT_SECRET=replace-me \
+  APP_URL=https://textile-erp-web.fly.dev \
+  CORS_ALLOWED_ORIGINS=https://textile-erp-web.fly.dev \
+  SUPER_ADMIN_EMAIL=superadmin@your-domain.example \
+  SUPER_ADMIN_PASSWORD=replace-me \
+  STORAGE_PROVIDER=s3 \
+  S3_ENDPOINT=https://your-r2-or-s3-endpoint \
+  S3_BUCKET=roll-manager \
+  S3_ACCESS_KEY_ID=replace-me \
+  S3_SECRET_ACCESS_KEY=replace-me
+```
+
+### 3. Deploy the API
+
+```bash
+fly deploy -c fly.api.toml
+```
+
+### 4. Deploy the web app
+
+If your API app name is different, update `VITE_API_URL` in [fly.web.toml](/home/mustafa/Roll-Manager/fly.web.toml) first.
+
+```bash
+fly deploy -c fly.web.toml
+```
+
+### 5. Smoke test
+
+```bash
+APP_URL=https://textile-erp-web.fly.dev pnpm run smoke:test
+```

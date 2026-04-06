@@ -4,6 +4,9 @@ WORKDIR /app
 
 RUN npm install -g pnpm@10.33.0
 
+ARG VITE_API_URL=""
+ENV VITE_API_URL=${VITE_API_URL}
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY artifacts/textile-erp/package.json artifacts/textile-erp/package.json
 COPY lib/api-client-react/package.json lib/api-client-react/package.json

@@ -26,8 +26,22 @@ export function LoginPage() {
         login(data as any);
         navigate(getPostLoginPath((data as any)?.user?.role));
       },
-      onError: () => {
-        setError(t.invalidCredentials);
+      onError: (err) => {
+        const status = typeof (err as { status?: unknown })?.status === "number"
+          ? (err as { status: number }).status
+          : undefined;
+
+        if (status && status >= 500) {
+          setError(lang === "ar" ? "تعذر الوصول إلى الخادم أو تم رفض الطلب من الإعدادات الأمنية" : "Server access failed or the request was blocked by security settings");
+          return;
+        }
+
+        if (status === 401) {
+          setError(t.invalidCredentials);
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : t.invalidCredentials);
       },
     },
   });

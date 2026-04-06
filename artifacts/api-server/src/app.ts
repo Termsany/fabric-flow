@@ -1,5 +1,4 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
-import cors from "cors";
 import multer from "multer";
 import pinoHttp from "pino-http";
 import path from "node:path";
@@ -39,17 +38,78 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.APP_URL 
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-      callback(null, true);
-      return;
-    }
+function getHostname(value: string): string | null {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return value
+      .trim()
+      .replace(/:\d+$/, "")
+      .toLowerCase() || null;
+  }
+}
 
-    callback(new Error("Origin is not allowed by CORS"));
-  },
-  credentials: false,
-}));
+function isLocalAlias(value: string): boolean {
+  return value === "localhost" || value === "127.0.0.1" || value === "::1";
+}
+
+function getRequestHostnames(req: Request): string[] {
+  const rawValues = [
+    req.headers["x-forwarded-host"],
+    req.headers.host,
+    ...allowedOrigins,
+  ].flatMap((value) => Array.isArray(value) ? value : [value]);
+
+  return rawValues
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .flatMap((value) => value.split(","))
+    .map((value) => getHostname(value))
+    .filter((value): value is string => Boolean(value));
+}
+
+function isOriginAllowed(req: Request, origin: string): boolean {
+  if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  const originHostname = getHostname(origin);
+  if (!originHostname) {
+    return false;
+  }
+
+  return getRequestHostnames(req).some((hostname) => (
+    hostname === originHostname
+    || (isLocalAlias(hostname) && isLocalAlias(originHostname))
+  ));
+}
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) {
+    next();
+    return;
+  }
+
+  if (!isOriginAllowed(req, origin)) {
+    next(new Error("Origin is not allowed by CORS"));
+    return;
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] || "Content-Type, Authorization",
+  );
+
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+
+  next();
+});
 app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-Content-Type-Options", "nosniff");
