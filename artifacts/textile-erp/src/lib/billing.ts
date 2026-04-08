@@ -1,4 +1,4 @@
-import { getApiUrl, getToken } from "@/lib/auth";
+import { apiClientRequest } from "@/lib/api-client";
 
 export interface BillingPlanDetails {
   key: "basic" | "pro" | "enterprise";
@@ -80,24 +80,7 @@ export interface BillingInvoice {
   notes: string | null;
 }
 
-async function billingFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const response = await fetch(getApiUrl(path), {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  });
-
-  const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.error || `HTTP ${response.status}`);
-  }
-
-  return data as T;
-}
+const billingFetch = apiClientRequest;
 
 export function getBillingSubscription(): Promise<BillingSubscription> {
   return billingFetch<BillingSubscription>("/api/billing/subscription", { method: "GET" });
@@ -120,21 +103,11 @@ export function createBillingCustomerPortal(): Promise<{ url: string }> {
 }
 
 export async function submitManualPayment(form: FormData): Promise<{ id: number; status: string; proofImageUrl: string; createdAt: string }> {
-  const token = getToken();
-  const response = await fetch(getApiUrl("/api/billing/pay"), {
+  return apiClientRequest("/api/billing/pay", {
     method: "POST",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: {},
     body: form,
   });
-
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.error || `HTTP ${response.status}`);
-  }
-
-  return data;
 }
 
 export function listManualPayments(): Promise<BillingPayment[]> {

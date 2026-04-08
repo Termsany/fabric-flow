@@ -1,6 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { billingStatusSchema, subscriptionIntervalSchema } from "./domain-constraints";
 
 export const tenantsTable = pgTable("tenants", {
   id: serial("id").primaryKey(),
@@ -22,6 +23,14 @@ export const tenantsTable = pgTable("tenants", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
-export const insertTenantSchema = createInsertSchema(tenantsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTenantSchema = createInsertSchema(tenantsTable)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    name: z.string().trim().min(1).max(200),
+    industry: z.string().trim().min(1).max(120).default("textile"),
+    country: z.string().trim().min(1).max(120).default("Egypt"),
+    billingStatus: billingStatusSchema.default("trialing"),
+    subscriptionInterval: subscriptionIntervalSchema.nullish(),
+  });
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
 export type Tenant = typeof tenantsTable.$inferSelect;

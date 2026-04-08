@@ -6,6 +6,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { sendAlert } from "./lib/alerts";
 import { isLocalStorage } from "./lib/object-storage";
+import { getAuthSessionMode } from "./lib/auth";
 
 const app: Express = express();
 
@@ -37,6 +38,7 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.APP_URL 
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const authSessionMode = getAuthSessionMode();
 
 function getHostname(value: string): string | null {
   try {
@@ -97,6 +99,9 @@ app.use((req, res, next) => {
 
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
+  if (authSessionMode === "cookie" || authSessionMode === "hybrid") {
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",

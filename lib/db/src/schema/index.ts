@@ -1,4 +1,5 @@
 export * from "./tenants";
+export * from "./domain-constraints";
 export * from "./platform-admins";
 export * from "./admin-audit-logs";
 export * from "./users";

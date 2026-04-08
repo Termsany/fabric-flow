@@ -1,4 +1,4 @@
-import { getApiUrl, getToken } from "@/lib/auth";
+import { apiClientRequest } from "@/lib/api-client";
 import type { PaymentMethodCode, TenantPaymentMethodRecord } from "@/lib/payment-methods";
 
 export interface PlanFeature {
@@ -131,27 +131,7 @@ export interface PlanUpsertPayload {
   }>;
 }
 
-async function plansFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const response = await fetch(getApiUrl(path), {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    if (data?.message && data?.errors) {
-      const firstError = Object.values<string[]>(data.errors)[0]?.[0];
-      throw new Error(firstError || data.message);
-    }
-    throw new Error(data?.error || data?.message || `HTTP ${response.status}`);
-  }
-  return data as T;
-}
+const plansFetch = apiClientRequest;
 
 export const getAdminPlans = () => plansFetch<PlanRecord[]>("/api/admin/plans");
 export const createAdminPlan = (payload: PlanUpsertPayload) => plansFetch<PlanRecord>("/api/admin/plans", { method: "POST", body: JSON.stringify(payload) });

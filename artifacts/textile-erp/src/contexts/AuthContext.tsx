@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { getApiUrl, getToken, setToken, clearToken } from "@/lib/auth";
-import type { AuthResponse, User } from "@workspace/api-client-react";
+import {
+  addAuthFailureListener,
+  canBootstrapAuthSession,
+  clearToken,
+  fetchCurrentUser,
+  getToken,
+  requestLogout,
+  setToken,
+} from "@/lib/auth";
+import { type AuthResponse, type User } from "@workspace/api-client-react";
 
 interface AuthContextType {
   user: User | null;
@@ -26,31 +34,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const storedToken = getToken();
-    if (storedToken) {
-      fetch(getApiUrl("/api/auth/me"), {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+    const cleanupAuth = () => {
+      clearToken();
+      setTokenState(null);
+      setUser(null);
+    };
 
-          return response.json();
-        })
+    const removeAuthListener = addAuthFailureListener(cleanupAuth);
+    const storedToken = getToken();
+    const canBootstrap = canBootstrapAuthSession();
+
+    if (canBootstrap) {
+      fetchCurrentUser()
         .then((data) => {
           if (data && data.id) {
             setUser(data);
             setTokenState(storedToken);
           } else {
-            clearToken();
+            cleanupAuth();
           }
         })
-        .catch(() => clearToken())
+        .catch(() => cleanupAuth())
         .finally(() => setIsLoading(false));
     } else {
       setIsLoading(false);
     }
+
+    return removeAuthListener;
   }, []);
 
   const login = (response: AuthResponse) => {
@@ -60,9 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    clearToken();
-    setTokenState(null);
-    setUser(null);
+    void requestLogout().finally(() => {
+      clearToken();
+      setTokenState(null);
+      setUser(null);
+    });
   };
 
   return (

@@ -2,6 +2,7 @@ import { boolean, integer, pgTable, serial, text, timestamp, uniqueIndex } from 
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { plansTable } from "./plans";
+import { planPriceIntervalSchema, supportedCurrencySchema } from "./domain-constraints";
 
 export const planPricesTable = pgTable("plan_prices", {
   id: serial("id").primaryKey(),
@@ -19,6 +20,13 @@ export const planPricesTable = pgTable("plan_prices", {
   planPricesUnique: uniqueIndex("plan_prices_plan_interval_unique").on(table.planId, table.interval),
 }));
 
-export const insertPlanPriceSchema = createInsertSchema(planPricesTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPlanPriceSchema = createInsertSchema(planPricesTable)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    interval: planPriceIntervalSchema,
+    currency: supportedCurrencySchema.default("EGP"),
+    amount: z.number().int().nonnegative(),
+    trialDays: z.number().int().nonnegative().default(0),
+  });
 export type InsertPlanPrice = z.infer<typeof insertPlanPriceSchema>;
 export type PlanPrice = typeof planPricesTable.$inferSelect;

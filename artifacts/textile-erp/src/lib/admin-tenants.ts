@@ -1,4 +1,4 @@
-import { getApiUrl, getToken } from "@/lib/auth";
+import { apiClientRequest } from "@/lib/api-client";
 
 export const adminTenantQueryKeys = {
   all: ["admin-tenants"] as const,
@@ -223,25 +223,7 @@ export interface AdminTenantPaymentMethod {
   updatedByName: string | null;
 }
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const response = await fetch(getApiUrl(path), {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
-}
+const adminFetch = apiClientRequest;
 
 export function listAdminTenants(filters: { search?: string; status?: string; plan?: string }) {
   const params = new URLSearchParams();

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { tenantsTable } from "./tenants";
 import { usersTable } from "./users";
 import { platformAdminsTable } from "./platform-admins";
+import { paymentMethodSchema, paymentStatusSchema } from "./domain-constraints";
 
 export const paymentsTable = pgTable("payments", {
   id: serial("id").primaryKey(),
@@ -26,6 +27,12 @@ export const insertPaymentSchema = createInsertSchema(paymentsTable).omit({
   reviewedAt: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  amount: z.number().positive(),
+  method: paymentMethodSchema,
+  status: paymentStatusSchema.default("pending"),
+  referenceNumber: z.string().trim().min(1).max(200),
+  proofImageUrl: z.string().trim().min(1).max(2048),
 });
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof paymentsTable.$inferSelect;

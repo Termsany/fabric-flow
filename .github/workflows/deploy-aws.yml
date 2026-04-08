@@ -1,0 +1,98 @@
+name: Deploy to AWS ECS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
+  ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+  ECS_BACKEND_CLUSTER: ${{ vars.ECS_BACKEND_CLUSTER }}
+  ECS_FRONTEND_CLUSTER: ${{ vars.ECS_FRONTEND_CLUSTER }}
+  ECS_BACKEND_SERVICE: ${{ vars.ECS_BACKEND_SERVICE }}
+  ECS_FRONTEND_SERVICE: ${{ vars.ECS_FRONTEND_SERVICE }}
+  ECS_BACKEND_TASK_DEFINITION: deploy/aws/backend-task-definition.json
+  ECS_FRONTEND_TASK_DEFINITION: deploy/aws/frontend-task-definition.json
+  CONTAINER_BACKEND_NAME: backend
+  CONTAINER_FRONTEND_NAME: frontend
+  VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: vars
+        run: |
+          echo "backend_image=${{ steps.login-ecr.outputs.registry }}/${ECR_BACKEND_REPOSITORY}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${{ steps.login-ecr.outputs.registry }}/${ECR_FRONTEND_REPOSITORY}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: ${{ steps.vars.outputs.backend_image }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: true
+          tags: ${{ steps.vars.outputs.frontend_image }}
+          build-args: |
+            VITE_API_URL=${{ env.VITE_API_URL }}
+
+      - name: Render backend task definition
+        id: render-backend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_BACKEND_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_BACKEND_NAME }}
+          image: ${{ steps.vars.outputs.backend_image }}
+
+      - name: Deploy backend service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-backend.outputs.task-definition }}
+          service: ${{ env.ECS_BACKEND_SERVICE }}
+          cluster: ${{ env.ECS_BACKEND_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Render frontend task definition
+        id: render-frontend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_FRONTEND_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_FRONTEND_NAME }}
+          image: ${{ steps.vars.outputs.frontend_image }}
+
+      - name: Deploy frontend service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-frontend.outputs.task-definition }}
+          service: ${{ env.ECS_FRONTEND_SERVICE }}
+          cluster: ${{ env.ECS_FRONTEND_CLUSTER }}
+          wait-for-service-stability: true

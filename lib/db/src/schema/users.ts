@@ -2,6 +2,7 @@ import { pgTable, text, serial, timestamp, boolean, integer } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tenantsTable } from "./tenants";
+import { userRoleSchema } from "./domain-constraints";
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -17,6 +18,12 @@ export const usersTable = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
-export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserSchema = createInsertSchema(usersTable)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    email: z.string().trim().email().max(320),
+    fullName: z.string().trim().min(1).max(200),
+    role: userRoleSchema.default("production"),
+  });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;

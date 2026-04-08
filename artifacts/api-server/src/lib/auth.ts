@@ -17,6 +17,14 @@ if (!configuredJwtSecret) {
 
 const JWT_SECRET = configuredJwtSecret || "textile-erp-secret-key";
 const JWT_EXPIRES_IN = "7d";
+const JWT_ISSUER = process.env.JWT_ISSUER?.trim() || "fabric-flow";
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE?.trim() || undefined;
+const JWT_CLOCK_TOLERANCE_SEC = Number(process.env.JWT_CLOCK_TOLERANCE_SEC || "15");
+const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME?.trim() || "textile_erp_session";
+const AUTH_SESSION_MODE = (process.env.AUTH_SESSION_MODE?.trim().toLowerCase() || "bearer") as "bearer" | "cookie" | "hybrid";
+const AUTH_COOKIE_SECURE = process.env.NODE_ENV === "production";
+const AUTH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_TOKEN_LENGTH = 4096;
 
 export interface JwtPayload {
   userId: number;
@@ -152,11 +160,44 @@ export async function verifyPlatformAdminCredentials(email: string, password: st
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn: JWT_EXPIRES_IN,
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+  });
 }
 
 export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  const decoded = jwt.verify(token, JWT_SECRET, {
+    algorithms: ["HS256"],
+    issuer: JWT_ISSUER,
+    clockTolerance: Number.isFinite(JWT_CLOCK_TOLERANCE_SEC) ? JWT_CLOCK_TOLERANCE_SEC : 15,
+    ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+  });
+
+  if (!decoded || typeof decoded !== "object") {
+    throw new Error("Invalid token payload");
+  }
+
+  const payload = decoded as Partial<JwtPayload>;
+  if (
+    typeof payload.userId !== "number"
+    || typeof payload.tenantId !== "number"
+    || typeof payload.role !== "string"
+    || typeof payload.email !== "string"
+    || payload.role.trim().length === 0
+    || payload.email.trim().length === 0
+  ) {
+    throw new Error("Invalid token payload");
+  }
+
+  return {
+    userId: payload.userId,
+    tenantId: payload.tenantId,
+    role: payload.role,
+    email: payload.email,
+  };
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -165,6 +206,83 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function comparePassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+  if (!header) {
+    return {};
+  }
+
+  return header.split(";").reduce<Record<string, string>>((acc, entry) => {
+    const separatorIndex = entry.indexOf("=");
+    if (separatorIndex === -1) {
+      return acc;
+    }
+
+    const key = entry.slice(0, separatorIndex).trim();
+    const value = entry.slice(separatorIndex + 1).trim();
+    if (!key) {
+      return acc;
+    }
+
+    acc[key] = decodeURIComponent(value);
+    return acc;
+  }, {});
+}
+
+export function getAuthCookieName(): string {
+  return AUTH_COOKIE_NAME;
+}
+
+export function getAuthSessionMode(): "bearer" | "cookie" | "hybrid" {
+  return AUTH_SESSION_MODE;
+}
+
+export function shouldUseCookieSessions(): boolean {
+  return AUTH_SESSION_MODE === "cookie" || AUTH_SESSION_MODE === "hybrid";
+}
+
+export function getRequestAuthToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    return token.length > 0 && token.length <= MAX_TOKEN_LENGTH ? token : null;
+  }
+
+  if (!shouldUseCookieSessions()) {
+    return null;
+  }
+
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies[AUTH_COOKIE_NAME];
+  return token && token.length <= MAX_TOKEN_LENGTH ? token : null;
+}
+
+export function attachSessionCookie(res: Response, token: string): void {
+  if (!shouldUseCookieSessions()) {
+    return;
+  }
+
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: AUTH_COOKIE_SECURE,
+    path: "/",
+    maxAge: AUTH_COOKIE_MAX_AGE_MS,
+  });
+}
+
+export function clearSessionCookie(res: Response): void {
+  if (!shouldUseCookieSessions()) {
+    return;
+  }
+
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: AUTH_COOKIE_SECURE,
+    path: "/",
+  });
 }
 
 declare global {
@@ -176,19 +294,19 @@ declare global {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  const token = getRequestAuthToken(req);
+  if (!token) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
-  const token = authHeader.slice(7);
   try {
     const payload = verifyToken(token);
     req.user = payload;
     next();
   } catch (err) {
     logger.warn({ err }, "Invalid JWT token");
+    clearSessionCookie(res);
     res.status(401).json({ error: "Invalid or expired token" });
   }
 }

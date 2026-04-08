@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { planPricesTable } from "./plan-prices";
 import { plansTable } from "./plans";
 import { tenantsTable } from "./tenants";
+import { billingStatusSchema } from "./domain-constraints";
 
 export const tenantSubscriptionsTable = pgTable("tenant_subscriptions", {
   id: serial("id").primaryKey(),
@@ -27,6 +28,11 @@ export const tenantSubscriptionsTable = pgTable("tenant_subscriptions", {
   tenantSubscriptionsTenantUnique: uniqueIndex("tenant_subscriptions_tenant_unique").on(table.tenantId),
 }));
 
-export const insertTenantSubscriptionSchema = createInsertSchema(tenantSubscriptionsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTenantSubscriptionSchema = createInsertSchema(tenantSubscriptionsTable)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    status: billingStatusSchema.default("trialing"),
+    amount: z.number().int().nonnegative().nullable().optional(),
+  });
 export type InsertTenantSubscription = z.infer<typeof insertTenantSubscriptionSchema>;
 export type TenantSubscription = typeof tenantSubscriptionsTable.$inferSelect;

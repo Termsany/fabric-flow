@@ -1,13 +1,13 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
-import authRouter from "./auth";
+import authRouter from "../modules/auth/auth.routes";
 import usersRouter from "./users";
 import productionOrdersRouter from "./production-orders";
 import fabricRollsRouter from "./fabric-rolls";
 import qcReportsRouter from "./qc-reports";
 import dyeingOrdersRouter from "./dyeing-orders";
 import warehousesRouter from "./warehouses";
-import salesRouter from "./sales";
+import salesRouter from "../modules/sales/sales.routes";
 import dashboardRouter from "./dashboard";
 import billingRouter from "./billing";
 import adminTenantsRouter from "./admin-tenants";

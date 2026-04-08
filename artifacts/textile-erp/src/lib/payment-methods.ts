@@ -1,4 +1,4 @@
-import { getApiUrl, getToken } from "@/lib/auth";
+import { apiClientRequest } from "@/lib/api-client";
 
 export type PaymentMethodCode = "instapay" | "vodafone_cash";
 
@@ -53,27 +53,7 @@ export interface BillingPaymentMethodQr {
   cached: boolean;
 }
 
-async function paymentMethodFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const response = await fetch(getApiUrl(path), {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    if (data?.message && data?.errors) {
-      const firstError = Object.values<string[]>(data.errors)[0]?.[0];
-      throw new Error(firstError || data.message);
-    }
-    throw new Error(data?.error || data?.message || `HTTP ${response.status}`);
-  }
-  return data as T;
-}
+const paymentMethodFetch = apiClientRequest;
 
 export function getAdminPaymentMethods() {
   return paymentMethodFetch<AdminPaymentMethodDefinition[]>("/api/admin/payment-methods");

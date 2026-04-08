@@ -139,3 +139,36 @@ fly deploy -c fly.web.toml
 ```bash
 APP_URL=https://textile-erp-web.fly.dev pnpm run smoke:test
 ```
+
+## AWS ECS Deployment
+
+The repository also includes AWS deployment starter files:
+
+- [/.env.aws.example](/home/mustafa/Roll-Manager/.env.aws.example)
+- [backend-task-definition.json](/home/mustafa/Roll-Manager/deploy/aws/backend-task-definition.json)
+- [frontend-task-definition.json](/home/mustafa/Roll-Manager/deploy/aws/frontend-task-definition.json)
+- [ecs-mapping.md](/home/mustafa/Roll-Manager/deploy/aws/ecs-mapping.md)
+- [deploy-aws.yml](/home/mustafa/Roll-Manager/.github/workflows/deploy-aws.yml)
+
+Use this stack on AWS:
+
+- ECR for Docker images
+- ECS Fargate for `backend` and `frontend`
+- RDS PostgreSQL instead of Docker `postgres`
+- S3 for uploads
+- ALB + ACM for HTTPS and routing
+
+GitHub Actions expects these repository variables:
+
+- `AWS_REGION`
+- `ECR_BACKEND_REPOSITORY`
+- `ECR_FRONTEND_REPOSITORY`
+- `ECS_BACKEND_CLUSTER`
+- `ECS_FRONTEND_CLUSTER`
+- `ECS_BACKEND_SERVICE`
+- `ECS_FRONTEND_SERVICE`
+- `VITE_API_URL`
+
+And this repository secret:
+
+- `AWS_ROLE_TO_ASSUME`
