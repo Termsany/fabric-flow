@@ -40,6 +40,17 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.APP_URL 
   .filter(Boolean);
 const authSessionMode = getAuthSessionMode();
 
+if (
+  process.env.NODE_ENV === "production"
+  && (authSessionMode === "cookie" || authSessionMode === "hybrid")
+  && allowedOrigins.length === 0
+) {
+  logger.warn(
+    { authSessionMode },
+    "Cookie-based auth is enabled without explicit CORS_ALLOWED_ORIGINS or APP_URL; cross-origin session bootstrap may fail",
+  );
+}
+
 function getHostname(value: string): string | null {
   try {
     return new URL(value).hostname.toLowerCase();

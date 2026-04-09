@@ -7,6 +7,7 @@ import {
   getToken,
   requestLogout,
   setToken,
+  shouldAttachBearerToken,
 } from "@/lib/auth";
 import { type AuthResponse, type User } from "@workspace/api-client-react";
 
@@ -40,6 +41,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
     };
 
+    const syncAuthenticatedUser = (nextUser: User, storedToken: string | null) => {
+      setUser(nextUser);
+      // Keep context token aligned with the active session mode.
+      setTokenState(shouldAttachBearerToken() ? storedToken : null);
+    };
+
     const removeAuthListener = addAuthFailureListener(cleanupAuth);
     const storedToken = getToken();
     const canBootstrap = canBootstrapAuthSession();
@@ -48,8 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fetchCurrentUser()
         .then((data) => {
           if (data && data.id) {
-            setUser(data);
-            setTokenState(storedToken);
+            syncAuthenticatedUser(data, storedToken);
           } else {
             cleanupAuth();
           }
@@ -64,8 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (response: AuthResponse) => {
-    setToken(response.token);
-    setTokenState(response.token);
+    if (shouldAttachBearerToken()) {
+      setToken(response.token);
+      setTokenState(response.token);
+    } else {
+      clearToken();
+      setTokenState(null);
+    }
     setUser(response.user);
   };
 

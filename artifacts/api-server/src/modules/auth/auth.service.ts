@@ -29,6 +29,28 @@ import {
 import { paymentMethodsService } from "../payment-methods/payment-methods.service";
 import { plansService } from "../plans/plans.service";
 
+type AuthSuccessResult<T> = {
+  ok: true;
+  status: number;
+  data: T;
+};
+
+type AuthFailureResult = {
+  ok: false;
+  status: number;
+  error: string;
+};
+
+export type AuthServiceResult<T> = AuthSuccessResult<T> | AuthFailureResult;
+
+function successResult<T>(data: T, status = 200): AuthSuccessResult<T> {
+  return { ok: true, status, data };
+}
+
+function failureResult(status: number, error: string): AuthFailureResult {
+  return { ok: false, status, error };
+}
+
 export type AuthServiceDependencies = {
   authRepository: {
     findUserByEmail: (email: string) => Promise<Array<{
@@ -157,28 +179,40 @@ export function createAuthService(
     isPlatformAdminRole,
   } = deps;
 
-  return {
-  async login(email: string, password: string) {
+  async function tryLoginPlatformAdmin(email: string, password: string) {
     const platformAdmin = await verifyPlatformAdminCredentials(email, password);
-    if (platformAdmin) {
-      await authRepository.updatePlatformAdminLastLogin(platformAdmin.id);
-      return formatUserAuthResponse({
-        id: platformAdmin.id,
-        tenantId: 0,
-        email: platformAdmin.email,
-        fullName: platformAdmin.fullName,
-        role: platformAdmin.role,
-        isActive: platformAdmin.isActive,
-        createdAt: platformAdmin.createdAt,
-        updatedAt: platformAdmin.updatedAt,
-      }, signToken);
+    if (!platformAdmin) {
+      return null;
     }
 
+    await authRepository.updatePlatformAdminLastLogin(platformAdmin.id);
+    return formatUserAuthResponse({
+      id: platformAdmin.id,
+      tenantId: 0,
+      email: platformAdmin.email,
+      fullName: platformAdmin.fullName,
+      role: platformAdmin.role,
+      isActive: platformAdmin.isActive,
+      createdAt: platformAdmin.createdAt,
+      updatedAt: platformAdmin.updatedAt,
+    }, signToken);
+  }
+
+  async function tryLoginSuperAdmin(email: string, password: string) {
     const superAdmin = getSuperAdminUser();
-    if (superAdmin && await verifySuperAdminCredentials(email, password)) {
-      return formatEnvSuperAdminAuthResponse(superAdmin, signToken);
+    if (!superAdmin) {
+      return null;
     }
 
+    const isValid = await verifySuperAdminCredentials(email, password);
+    if (!isValid) {
+      return null;
+    }
+
+    return formatEnvSuperAdminAuthResponse(superAdmin, signToken);
+  }
+
+  async function tryLoginAppUser(email: string, password: string) {
     const [user] = await authRepository.findUserByEmail(email);
     if (!user || !user.isActive) {
       return null;
@@ -191,19 +225,93 @@ export function createAuthService(
 
     await authRepository.updateUserLastLogin(user.id);
     return formatUserAuthResponse(user, signToken);
-  },
+  }
 
-  async register(input: {
+  async function changePlatformAdminPassword(
+    platformAdmin: {
+      id: number;
+      passwordHash: string;
+    },
+    input: { currentPassword: string; newPassword: string },
+    rateKey: string,
+  ) {
+    const valid = await comparePassword(input.currentPassword, platformAdmin.passwordHash);
+    if (!valid) {
+      return failureResult(400, "Current password is incorrect");
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    await authRepository.updatePlatformAdminPassword(platformAdmin.id, passwordHash);
+    clearRateLimit(rateKey);
+    return successResult({ success: true as const });
+  }
+
+  async function changeSuperAdminPassword(
+    user: JwtPayload,
+    input: { currentPassword: string; newPassword: string },
+    rateKey: string,
+  ) {
+    if (user.role !== "super_admin" || user.userId !== 0) {
+      return failureResult(404, "Admin not found");
+    }
+
+    const superAdmin = getSuperAdminUser();
+    if (!superAdmin) {
+      return failureResult(401, "Super admin is not configured");
+    }
+
+    const valid = await verifySuperAdminCredentials(user.email, input.currentPassword);
+    if (!valid) {
+      return failureResult(400, "Current password is incorrect");
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    const platformAdmin = (await authRepository.upsertSuperAdminPlatformAccount({
+      email: superAdmin.email,
+      passwordHash,
+      fullName: superAdmin.fullName,
+    }))[0] ?? null;
+
+    clearRateLimit(rateKey);
+    return successResult({ success: true as const, migrated: Boolean(platformAdmin) });
+  }
+
+  async function changeAppUserPassword(
+    user: JwtPayload,
+    input: { currentPassword: string; newPassword: string },
+    rateKey: string,
+  ) {
+    const [appUser] = await authRepository.findUserById(user.userId);
+    if (!appUser) {
+      return failureResult(404, "User not found");
+    }
+
+    const valid = await comparePassword(input.currentPassword, appUser.passwordHash);
+    if (!valid) {
+      return failureResult(400, "Current password is incorrect");
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    await authRepository.updateUserPassword(appUser.id, passwordHash);
+    clearRateLimit(rateKey);
+    return successResult({ success: true as const });
+  }
+
+  async function ensureRegistrationEmailAvailable(email: string) {
+    const [existing] = await authRepository.findUserByEmail(email);
+    if (existing) {
+      return failureResult(400, "Email already registered");
+    }
+
+    return null;
+  }
+
+  async function createTenantAndAdminUser(input: {
     companyName: string;
     email: string;
     password: string;
     fullName: string;
   }) {
-    const [existing] = await authRepository.findUserByEmail(input.email);
-    if (existing) {
-      return { error: "Email already registered" as const };
-    }
-
     const trialWindow = buildTrialWindow();
 
     const [tenant] = await authRepository.createTenant(
@@ -220,112 +328,106 @@ export function createAuthService(
       }),
     );
 
-    await paymentMethodsService.initializeTenantPaymentMethods(tenant.id);
-    await plansService.ensureTenantSubscription(tenant.id);
+    return { tenant, user };
+  }
 
-    return { data: formatUserAuthResponse(user, signToken) };
+  async function provisionRegisteredTenant(tenantId: number) {
+    await paymentMethodsService.initializeTenantPaymentMethods(tenantId);
+    await plansService.ensureTenantSubscription(tenantId);
+  }
+
+  return {
+  async login(email: string, password: string) {
+    const platformAdminResult = await tryLoginPlatformAdmin(email, password);
+    if (platformAdminResult) {
+      return successResult(platformAdminResult);
+    }
+
+    const superAdminResult = await tryLoginSuperAdmin(email, password);
+    if (superAdminResult) {
+      return successResult(superAdminResult);
+    }
+
+    const appUserResult = await tryLoginAppUser(email, password);
+    if (appUserResult) {
+      return successResult(appUserResult);
+    }
+
+    return failureResult(401, "Invalid credentials");
   },
 
-  async getCurrentUser(user: JwtPayload) {
+  async register(input: {
+    companyName: string;
+    email: string;
+    password: string;
+    fullName: string;
+  }): Promise<AuthServiceResult<ReturnType<typeof formatUserAuthResponse>>> {
+    const emailAvailabilityFailure = await ensureRegistrationEmailAvailable(input.email);
+    if (emailAvailabilityFailure) {
+      return emailAvailabilityFailure;
+    }
+
+    const { tenant, user } = await createTenantAndAdminUser(input);
+    await provisionRegisteredTenant(tenant.id);
+
+    return successResult(formatUserAuthResponse(user, signToken), 201);
+  },
+
+  async getCurrentUser(user: JwtPayload): Promise<AuthServiceResult<ReturnType<typeof formatCurrentAppUser>>> {
     if (isPlatformAdminRole(user.role) && user.userId > 0) {
       const [admin] = await authRepository.findPlatformAdminById(user.userId);
       if (!admin || !admin.isActive) {
-        return { error: "Admin not found" as const };
+        return failureResult(401, "Admin not found");
       }
 
-      return {
-        data: formatCurrentPlatformAdmin(admin),
-      };
+      return successResult(formatCurrentPlatformAdmin(admin));
     }
 
     if (user.role === "super_admin") {
       const superAdmin = getSuperAdminUser();
       if (!superAdmin) {
-        return { error: "Super admin is not configured" as const };
+        return failureResult(401, "Super admin is not configured");
       }
 
-      return {
-        data: formatCurrentSuperAdmin(superAdmin),
-      };
+      return successResult(formatCurrentSuperAdmin(superAdmin));
     }
 
     const [appUser] = await authRepository.findUserById(user.userId);
     if (!appUser) {
-      return { error: "User not found" as const };
+      return failureResult(401, "User not found");
     }
 
-    return {
-      data: formatCurrentAppUser(appUser),
-    };
+    return successResult(formatCurrentAppUser(appUser));
   },
 
-  async changePassword(user: JwtPayload, reqMeta: { ip: string | undefined }, input: { currentPassword: string; newPassword: string }) {
+  async changePassword(
+    user: JwtPayload,
+    reqMeta: { ip: string | undefined },
+    input: { currentPassword: string; newPassword: string },
+  ): Promise<AuthServiceResult<{ success: true; migrated?: boolean }>> {
     const rateKey = `${user.userId}:${reqMeta.ip ?? "unknown"}`;
     const rateLimit = checkRateLimit(rateKey);
     if (rateLimit.limited) {
-      return { status: 429 as const, error: "Too many attempts. Please try again later." };
+      return failureResult(429, "Too many attempts. Please try again later.");
     }
 
     if (!isStrongPassword(input.newPassword)) {
-      return { status: 400 as const, error: "Password must be at least 8 characters and include upper, lower, and number" };
+      return failureResult(400, "Password must be at least 8 characters and include upper, lower, and number");
     }
 
     if (isPlatformAdminRole(user.role) || user.role === "super_admin") {
-      let platformAdmin = user.userId > 0
+      const platformAdmin = user.userId > 0
         ? ((await authRepository.findPlatformAdminById(user.userId))[0] ?? null)
         : null;
 
       if (platformAdmin) {
-        const valid = await comparePassword(input.currentPassword, platformAdmin.passwordHash);
-        if (!valid) {
-          return { status: 400 as const, error: "Current password is incorrect" };
-        }
-
-        const passwordHash = await hashPassword(input.newPassword);
-        await authRepository.updatePlatformAdminPassword(platformAdmin.id, passwordHash);
-        clearRateLimit(rateKey);
-        return { status: 200 as const, data: { success: true } };
+        return changePlatformAdminPassword(platformAdmin, input, rateKey);
       }
 
-      if (user.role !== "super_admin" || user.userId !== 0) {
-        return { status: 404 as const, error: "Admin not found" };
-      }
-
-      const superAdmin = getSuperAdminUser();
-      if (!superAdmin) {
-        return { status: 401 as const, error: "Super admin is not configured" };
-      }
-
-      const valid = await verifySuperAdminCredentials(user.email, input.currentPassword);
-      if (!valid) {
-        return { status: 400 as const, error: "Current password is incorrect" };
-      }
-
-      const passwordHash = await hashPassword(input.newPassword);
-      platformAdmin = (await authRepository.upsertSuperAdminPlatformAccount({
-        email: superAdmin.email,
-        passwordHash,
-        fullName: superAdmin.fullName,
-      }))[0] ?? null;
-
-      clearRateLimit(rateKey);
-      return { status: 200 as const, data: { success: true, migrated: Boolean(platformAdmin) } };
+      return changeSuperAdminPassword(user, input, rateKey);
     }
 
-    const [appUser] = await authRepository.findUserById(user.userId);
-    if (!appUser) {
-      return { status: 404 as const, error: "User not found" };
-    }
-
-    const valid = await comparePassword(input.currentPassword, appUser.passwordHash);
-    if (!valid) {
-      return { status: 400 as const, error: "Current password is incorrect" };
-    }
-
-    const passwordHash = await hashPassword(input.newPassword);
-    await authRepository.updateUserPassword(appUser.id, passwordHash);
-    clearRateLimit(rateKey);
-    return { status: 200 as const, data: { success: true } };
+    return changeAppUserPassword(user, input, rateKey);
   },
   };
 }

@@ -13,6 +13,18 @@ import {
   parseRegisterBody,
 } from "./auth.validation";
 
+function respondValidationError(res: Response, message: string): void {
+  res.status(400).json(buildValidationError(message));
+}
+
+function respondAuthError(res: Response, status: number, error: string): void {
+  res.status(status).json(buildAuthError(error));
+}
+
+function respondInvalidCredentials(res: Response): void {
+  res.status(401).json(buildInvalidCredentialsError());
+}
+
 export type AuthControllerDependencies = {
   authService: {
     login: typeof authService.login;
@@ -29,41 +41,46 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   async login(req: Request, res: Response): Promise<void> {
     const parsed = parseLoginBody(req.body);
     if (!parsed.success) {
-      res.status(400).json(buildValidationError(parsed.error.message));
+      respondValidationError(res, parsed.error.message);
       return;
     }
 
     const result = await authService.login(parsed.data.email, parsed.data.password);
-    if (!result) {
-      res.status(401).json(buildInvalidCredentialsError());
+    if (!result.ok) {
+      if (result.status === 401 && result.error === "Invalid credentials") {
+        respondInvalidCredentials(res);
+        return;
+      }
+
+      respondAuthError(res, result.status, result.error);
       return;
     }
 
-    attachSessionCookie(res, result.token);
-    res.json(result);
+    attachSessionCookie(res, result.data.token);
+    res.json(result.data);
   },
 
   async register(req: Request, res: Response): Promise<void> {
     const parsed = parseRegisterBody(req.body);
     if (!parsed.success) {
-      res.status(400).json(buildValidationError(parsed.error.message));
+      respondValidationError(res, parsed.error.message);
       return;
     }
 
     const result = await authService.register(parsed.data);
-    if ("error" in result) {
-      res.status(400).json(buildAuthError(result.error ?? "Unknown error"));
+    if (!result.ok) {
+      respondAuthError(res, result.status, result.error);
       return;
     }
 
     attachSessionCookie(res, result.data.token);
-    res.status(201).json(result.data);
+    res.status(result.status).json(result.data);
   },
 
   async getMe(req: Request, res: Response): Promise<void> {
     const result = await authService.getCurrentUser(req.user!);
-    if ("error" in result) {
-      res.status(result.error === "Super admin is not configured" ? 401 : 401).json(buildAuthError(result.error ?? "Unauthorized"));
+    if (!result.ok) {
+      respondAuthError(res, result.status, result.error);
       return;
     }
 
@@ -73,13 +90,13 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   async changePassword(req: Request, res: Response): Promise<void> {
     const parsed = parseChangePasswordBody(req.body);
     if (!parsed.success) {
-      res.status(400).json(buildValidationError("Invalid password input"));
+      respondValidationError(res, "Invalid password input");
       return;
     }
 
     const result = await authService.changePassword(req.user!, { ip: req.ip }, parsed.data);
-    if ("error" in result) {
-      res.status(result.status).json(buildAuthError(result.error ?? "Unknown error"));
+    if (!result.ok) {
+      respondAuthError(res, result.status, result.error);
       return;
     }
 
