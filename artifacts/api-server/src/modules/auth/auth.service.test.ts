@@ -75,10 +75,14 @@ function createAuthDeps(options?: {
   upsertedSuperAdminAccount?: TestPlatformAdminRow[];
   rateLimitLimited?: boolean;
   isPlatformAdminRole?: (role: string) => boolean;
+  useTransactionalCreation?: boolean;
+  transactionalCreationError?: Error | null;
+  provisioningErrorAt?: "paymentMethods" | "subscription" | null;
 }) {
   const calls = {
     createTenant: 0,
     createUser: 0,
+    createTenantWithAdmin: 0,
     initPaymentMethods: 0,
     ensureSubscription: 0,
     updateUserPassword: 0,
@@ -95,6 +99,9 @@ function createAuthDeps(options?: {
   const superAdminUser = options?.superAdminUser ?? null;
   const superAdminCredentialsValid = options?.superAdminCredentialsValid ?? false;
   const upsertedSuperAdminAccount = options?.upsertedSuperAdminAccount ?? [];
+  const useTransactionalCreation = options?.useTransactionalCreation ?? true;
+  const transactionalCreationError = options?.transactionalCreationError ?? null;
+  const provisioningErrorAt = options?.provisioningErrorAt ?? null;
 
   const deps = {
     calls,
@@ -126,6 +133,35 @@ function createAuthDeps(options?: {
             updatedAt: new Date("2026-01-01T00:00:00.000Z"),
           }];
         },
+        createTenantWithAdmin: useTransactionalCreation
+          ? async () => {
+            calls.createTenantWithAdmin += 1;
+            if (transactionalCreationError) {
+              throw transactionalCreationError;
+            }
+
+            return {
+              tenant: {
+                id: 2,
+                name: "Tenant",
+                currentPlan: "basic",
+                billingStatus: "trialing",
+                trialEndsAt: new Date(),
+                subscriptionEndsAt: new Date(),
+              },
+              user: {
+                id: 3,
+                tenantId: 2,
+                email: "owner@example.com",
+                fullName: "Owner",
+                role: "admin",
+                isActive: true,
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+                updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            };
+          }
+          : undefined,
         updateUserLastLogin: async () => {
           calls.updateUserLastLogin += 1;
           return undefined;
@@ -164,11 +200,17 @@ function createAuthDeps(options?: {
       signToken: () => "signed-token",
       paymentMethodsService: {
         initializeTenantPaymentMethods: async () => {
+          if (provisioningErrorAt === "paymentMethods") {
+            throw new Error("payment methods failed");
+          }
           calls.initPaymentMethods += 1;
         },
       },
       plansService: {
         ensureTenantSubscription: async () => {
+          if (provisioningErrorAt === "subscription") {
+            throw new Error("subscription failed");
+          }
           calls.ensureSubscription += 1;
         },
       },
@@ -242,12 +284,55 @@ test("authService.register initializes tenant billing dependencies", async () =>
     assert.fail("Expected register result to contain data");
   }
   assert.equal(result.status, 201);
-  assert.equal(calls.createTenant, 1);
-  assert.equal(calls.createUser, 1);
+  assert.equal(calls.createTenantWithAdmin, 1);
+  assert.equal(calls.createTenant, 0);
+  assert.equal(calls.createUser, 0);
   assert.equal(calls.initPaymentMethods, 1);
   assert.equal(calls.ensureSubscription, 1);
   assert.equal(typeof result.data.token, "string");
   assert.ok(result.data.token.length > 5);
+});
+
+test("authService.register surfaces provisioning failure after successful core creation", async () => {
+  const { service, calls } = createAuthDeps({
+    provisioningErrorAt: "subscription",
+  });
+
+  await assert.rejects(
+    () => service.register({
+      companyName: "New Co",
+      email: "owner@example.com",
+      password: "Strong123",
+      fullName: "Owner",
+    }),
+    /Registration provisioning failed after core account creation/,
+  );
+
+  assert.equal(calls.createTenantWithAdmin, 1);
+  assert.equal(calls.initPaymentMethods, 1);
+  assert.equal(calls.ensureSubscription, 0);
+});
+
+test("authService.register stops before provisioning when transactional core creation fails", async () => {
+  const { service, calls } = createAuthDeps({
+    transactionalCreationError: new Error("core creation failed"),
+  });
+
+  await assert.rejects(
+    () => service.register({
+      companyName: "New Co",
+      email: "owner@example.com",
+      password: "Strong123",
+      fullName: "Owner",
+    }),
+    /core creation failed/,
+  );
+
+  assert.equal(calls.createTenantWithAdmin, 1);
+  assert.equal(calls.createTenant, 0);
+  assert.equal(calls.createUser, 0);
+  assert.equal(calls.initPaymentMethods, 0);
+  assert.equal(calls.ensureSubscription, 0);
 });
 
 test("authService.register stops early when email is already registered", async () => {

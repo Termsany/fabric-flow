@@ -28,6 +28,21 @@ export const authRepository = {
     return db.insert(usersTable).values(values).returning();
   },
 
+  createTenantWithAdmin(input: {
+    tenant: typeof tenantsTable.$inferInsert;
+    user: typeof usersTable.$inferInsert;
+  }) {
+    return db.transaction(async (tx) => {
+      const [tenant] = await tx.insert(tenantsTable).values(input.tenant).returning();
+      const [user] = await tx.insert(usersTable).values({
+        ...input.user,
+        tenantId: tenant.id,
+      }).returning();
+
+      return { tenant, user };
+    });
+  },
+
   findPlatformAdminById(id: number) {
     return db.select().from(platformAdminsTable).where(eq(platformAdminsTable.id, id));
   },

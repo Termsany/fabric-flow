@@ -101,6 +101,35 @@ export type AuthServiceDependencies = {
       createdAt: Date;
       updatedAt: Date;
     }>>;
+    createTenantWithAdmin?: (input: {
+      tenant: {
+        name: string;
+        currentPlan: string;
+        billingStatus: string;
+        trialEndsAt: Date;
+        subscriptionEndsAt: Date;
+      };
+      user: {
+        tenantId: number;
+        email: string;
+        passwordHash: string;
+        fullName: string;
+        role: string;
+        isActive: boolean;
+      };
+    }) => Promise<{
+      tenant: { id: number };
+      user: {
+        id: number;
+        tenantId: number;
+        email: string;
+        fullName: string;
+        role: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+    }>;
     findPlatformAdminById: (id: number) => Promise<Array<{
       id: number;
       email: string;
@@ -313,12 +342,23 @@ export function createAuthService(
     fullName: string;
   }) {
     const trialWindow = buildTrialWindow();
-
-    const [tenant] = await authRepository.createTenant(
-      buildTenantRegistrationValues(input.companyName, trialWindow),
-    );
-
+    const tenantValues = buildTenantRegistrationValues(input.companyName, trialWindow);
     const passwordHash = await hashPassword(input.password);
+    const userValues = buildTenantAdminValues({
+      tenantId: 0,
+      email: input.email,
+      passwordHash,
+      fullName: input.fullName,
+    });
+
+    if (authRepository.createTenantWithAdmin) {
+      return authRepository.createTenantWithAdmin({
+        tenant: tenantValues,
+        user: userValues,
+      });
+    }
+
+    const [tenant] = await authRepository.createTenant(tenantValues);
     const [user] = await authRepository.createUser(
       buildTenantAdminValues({
         tenantId: tenant.id,
@@ -334,6 +374,19 @@ export function createAuthService(
   async function provisionRegisteredTenant(tenantId: number) {
     await paymentMethodsService.initializeTenantPaymentMethods(tenantId);
     await plansService.ensureTenantSubscription(tenantId);
+  }
+
+  async function completeRegistrationProvisioning(tenantId: number) {
+    try {
+      await provisionRegisteredTenant(tenantId);
+    } catch (error) {
+      // Follow-up: if registration provisioning becomes a recurring failure mode,
+      // add retry and/or compensation at the provisioning boundary instead of
+      // expanding this auth flow into a larger saga.
+      throw new Error("Registration provisioning failed after core account creation", {
+        cause: error,
+      });
+    }
   }
 
   return {
@@ -368,7 +421,7 @@ export function createAuthService(
     }
 
     const { tenant, user } = await createTenantAndAdminUser(input);
-    await provisionRegisteredTenant(tenant.id);
+    await completeRegistrationProvisioning(tenant.id);
 
     return successResult(formatUserAuthResponse(user, signToken), 201);
   },
