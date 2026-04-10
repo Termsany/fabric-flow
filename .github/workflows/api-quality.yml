@@ -1,0 +1,48 @@
+name: API Quality
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/api-server/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/api-quality.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "artifacts/api-server/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/api-quality.yml"
+
+jobs:
+  api-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: API typecheck
+        run: pnpm exec tsc -p artifacts/api-server/tsconfig.json --noEmit
+
+      - name: Auth focused tests
+        run: pnpm run test:auth
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/roll_manager

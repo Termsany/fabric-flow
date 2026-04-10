@@ -34,28 +34,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const syncAuthState = (nextUser: User | null, nextToken?: string | null) => {
+    if (nextToken && shouldAttachBearerToken()) {
+      setToken(nextToken);
+    } else if (!shouldAttachBearerToken()) {
+      clearToken();
+    }
+
+    setUser(nextUser);
+    // Reflect the active transport mode and the token as actually persisted,
+    // instead of coupling context state to a raw login response token.
+    setTokenState(shouldAttachBearerToken() ? getToken() : null);
+  };
+
   useEffect(() => {
     const cleanupAuth = () => {
       clearToken();
-      setTokenState(null);
-      setUser(null);
-    };
-
-    const syncAuthenticatedUser = (nextUser: User, storedToken: string | null) => {
-      setUser(nextUser);
-      // Keep context token aligned with the active session mode.
-      setTokenState(shouldAttachBearerToken() ? storedToken : null);
+      syncAuthState(null);
     };
 
     const removeAuthListener = addAuthFailureListener(cleanupAuth);
-    const storedToken = getToken();
     const canBootstrap = canBootstrapAuthSession();
 
     if (canBootstrap) {
       fetchCurrentUser()
         .then((data) => {
           if (data && data.id) {
-            syncAuthenticatedUser(data, storedToken);
+            syncAuthState(data);
           } else {
             cleanupAuth();
           }
@@ -70,21 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (response: AuthResponse) => {
-    if (shouldAttachBearerToken()) {
-      setToken(response.token);
-      setTokenState(response.token);
-    } else {
-      clearToken();
-      setTokenState(null);
-    }
-    setUser(response.user);
+    syncAuthState(response.user, response.token);
   };
 
   const logout = () => {
     void requestLogout().finally(() => {
       clearToken();
-      setTokenState(null);
-      setUser(null);
+      syncAuthState(null);
     });
   };
 

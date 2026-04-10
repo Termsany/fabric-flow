@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, fabricRollsTable, auditLogsTable } from "@workspace/db";
+import { db, fabricRollsTable, auditLogsTable, warehousesTable } from "@workspace/db";
 import { eq, and, desc, ilike, SQL } from "drizzle-orm";
 import { requireAuth } from "../lib/auth";
 import {
@@ -114,7 +114,18 @@ router.patch("/fabric-rolls/:id", requireAuth, async (req, res): Promise<void> =
 
   const updates: Record<string, unknown> = {};
   if (parsed.data.status != null) updates.status = parsed.data.status;
-  if (parsed.data.warehouseId != null) updates.warehouseId = parsed.data.warehouseId;
+  if (parsed.data.warehouseId != null) {
+    const [warehouse] = await db.select({ id: warehousesTable.id }).from(warehousesTable).where(
+      and(eq(warehousesTable.id, parsed.data.warehouseId), eq(warehousesTable.tenantId, req.user!.tenantId))
+    );
+
+    if (!warehouse) {
+      res.status(400).json({ error: "Warehouse not found" });
+      return;
+    }
+
+    updates.warehouseId = parsed.data.warehouseId;
+  }
   if (parsed.data.color != null) updates.color = parsed.data.color;
   if (parsed.data.length != null) updates.length = parsed.data.length;
   if (parsed.data.weight != null) updates.weight = parsed.data.weight;

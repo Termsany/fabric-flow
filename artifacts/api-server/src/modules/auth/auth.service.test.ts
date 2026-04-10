@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAuthService } from "./auth.service";
+import type { PlatformAdminRole } from "../../lib/auth";
 
 type TestUserRow = {
   id: number;
@@ -74,7 +75,7 @@ function createAuthDeps(options?: {
   superAdminCredentialsValid?: boolean;
   upsertedSuperAdminAccount?: TestPlatformAdminRow[];
   rateLimitLimited?: boolean;
-  isPlatformAdminRole?: (role: string) => boolean;
+  isPlatformAdminRole?: (role: string) => role is PlatformAdminRole;
   useTransactionalCreation?: boolean;
   transactionalCreationError?: Error | null;
   provisioningErrorAt?: "paymentMethods" | "subscription" | null;
@@ -217,7 +218,7 @@ function createAuthDeps(options?: {
       checkRateLimit: () => ({ limited: options?.rateLimitLimited ?? false }),
       clearRateLimit: () => undefined,
       isStrongPassword: (value) => value === "Strong123" || value === "PlatformPass123",
-      isPlatformAdminRole: options?.isPlatformAdminRole ?? (() => false),
+      isPlatformAdminRole: options?.isPlatformAdminRole ?? ((_: string): _ is PlatformAdminRole => false),
     }),
   };
 
@@ -267,6 +268,32 @@ test("authService.login falls back to app user when admin branches do not match"
   assert.equal(result.data.user.tenantId, 2);
   assert.equal(calls.updateUserLastLogin, 1);
   assert.equal(calls.updatePlatformAdminLastLogin, 0);
+});
+
+test("authService.login uses the env super admin path when platform admin auth does not match", async () => {
+  const { service, calls } = createAuthDeps({
+    superAdminUser: {
+      id: 0,
+      tenantId: 0,
+      email: "superadmin@fabric.local",
+      fullName: "Env Super Admin",
+      role: "super_admin",
+      isActive: true,
+    },
+    superAdminCredentialsValid: true,
+  });
+
+  const result = await service.login("superadmin@fabric.local", "Strong123");
+
+  assert.equal(result.ok, true);
+  if (!result.ok) {
+    assert.fail("Expected successful super admin login");
+  }
+  assert.equal(result.status, 200);
+  assert.equal(result.data.user.role, "super_admin");
+  assert.equal(result.data.user.email, "superadmin@fabric.local");
+  assert.equal(calls.updatePlatformAdminLastLogin, 0);
+  assert.equal(calls.updateUserLastLogin, 0);
 });
 
 test("authService.register initializes tenant billing dependencies", async () => {
@@ -379,7 +406,7 @@ test("authService.changePassword rejects weak passwords before persistence", asy
 test("authService.changePassword updates platform admin passwords through the admin branch", async () => {
   const { service, calls } = createAuthDeps({
     platformAdminsById: [createPlatformAdmin()],
-    isPlatformAdminRole: (role) => role === "platform_admin",
+    isPlatformAdminRole: (role): role is PlatformAdminRole => role === "platform_admin",
   });
 
   const result = await service.changePassword(
@@ -397,6 +424,62 @@ test("authService.changePassword updates platform admin passwords through the ad
   assert.equal(calls.updateUserPassword, 0);
 });
 
+test("authService.changePassword updates app user passwords through the app-user branch", async () => {
+  const { service, calls } = createAuthDeps();
+
+  const result = await service.changePassword(
+    { userId: 7, tenantId: 2, role: "admin", email: "user@example.com" },
+    { ip: "127.0.0.1" },
+    { currentPassword: "Current123", newPassword: "Strong123" },
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    status: 200,
+    data: { success: true },
+  });
+  assert.equal(calls.updateUserPassword, 1);
+  assert.equal(calls.updatePlatformAdminPassword, 0);
+});
+
+test("authService.getCurrentUser rejects app-user tokens whose tenant does not match the loaded user", async () => {
+  const { service } = createAuthDeps({
+    usersById: [createAppUser({ tenantId: 99 })],
+  });
+
+  const result = await service.getCurrentUser({
+    userId: 7,
+    tenantId: 2,
+    role: "admin",
+    email: "user@example.com",
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: 401,
+    error: "User not found",
+  });
+});
+
+test("authService.changePassword rejects app-user tokens whose tenant does not match the loaded user", async () => {
+  const { service, calls } = createAuthDeps({
+    usersById: [createAppUser({ tenantId: 99 })],
+  });
+
+  const result = await service.changePassword(
+    { userId: 7, tenantId: 2, role: "admin", email: "user@example.com" },
+    { ip: "127.0.0.1" },
+    { currentPassword: "Current123", newPassword: "Strong123" },
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: 404,
+    error: "User not found",
+  });
+  assert.equal(calls.updateUserPassword, 0);
+});
+
 test("authService.changePassword migrates env super admin into a platform admin account", async () => {
   const { service, calls } = createAuthDeps({
     superAdminUser: {
@@ -409,7 +492,7 @@ test("authService.changePassword migrates env super admin into a platform admin 
     },
     superAdminCredentialsValid: true,
     upsertedSuperAdminAccount: [createPlatformAdmin({ id: 99, email: "superadmin@fabric.local" })],
-    isPlatformAdminRole: (role) => role === "platform_admin",
+    isPlatformAdminRole: (role): role is PlatformAdminRole => role === "platform_admin",
   });
 
   const result = await service.changePassword(

@@ -1,6 +1,8 @@
 import { LoginBody, RegisterBody } from "@workspace/api-zod";
 import { z } from "zod";
 
+export const CHANGE_PASSWORD_VALIDATION_MESSAGE = "Invalid password input";
+
 /**
  * Keep controller-level validation intentionally light.
  * The auth service remains the source of truth for password policy
@@ -17,6 +19,8 @@ export const changePasswordSchema = z.object({
   currentPassword: currentPasswordInputSchema,
   newPassword: newPasswordInputSchema,
 });
+
+export type ValidationParseResult<T> = z.SafeParseReturnType<unknown, T>;
 
 export const parseLoginBody = (input: unknown) => LoginBody.safeParse(input);
 export const parseRegisterBody = (input: unknown) => RegisterBody.safeParse(input);

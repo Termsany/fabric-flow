@@ -34,6 +34,12 @@ app.use(
     },
   }),
 );
+app.use((req, res, next) => {
+  if (req.id) {
+    res.setHeader("X-Request-Id", String(req.id));
+  }
+  next();
+});
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.APP_URL || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -152,7 +158,7 @@ app.use("/api", (_req: Request, res: Response) => {
   res.status(404).json({ error: "API route not found" });
 });
 
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof multer.MulterError) {
     const message = err.code === "LIMIT_FILE_SIZE"
       ? "Image is too large. Maximum size is 4MB"
@@ -166,7 +172,17 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     return;
   }
 
-  logger.error({ err }, "Unhandled API error");
+  logger.error(
+    {
+      err,
+      reqId: req.id,
+      method: req.method,
+      path: req.path,
+      userId: req.user?.userId ?? null,
+      tenantId: req.user?.tenantId ?? null,
+    },
+    "Unhandled API error",
+  );
   void sendAlert({
     level: "error",
     source: "express",

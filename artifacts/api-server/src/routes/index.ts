@@ -6,7 +6,7 @@ import productionOrdersRouter from "./production-orders";
 import fabricRollsRouter from "./fabric-rolls";
 import qcReportsRouter from "./qc-reports";
 import dyeingOrdersRouter from "./dyeing-orders";
-import warehousesRouter from "./warehouses";
+import warehousesRouter from "../modules/warehouses/warehouses.routes";
 import salesRouter from "../modules/sales/sales.routes";
 import dashboardRouter from "./dashboard";
 import billingRouter from "./billing";

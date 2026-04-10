@@ -305,7 +305,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     req.user = payload;
     next();
   } catch (err) {
-    logger.warn({ err }, "Invalid JWT token");
+    logger.warn(
+      {
+        err,
+        reqId: req.id,
+        path: req.path,
+        ip: req.ip,
+      },
+      "Invalid JWT token",
+    );
     clearSessionCookie(res);
     res.status(401).json({ error: "Invalid or expired token" });
   }
@@ -337,6 +345,14 @@ export function requireTenantAdmin(req: Request, res: Response, next: NextFuncti
   }
 
   next();
+}
+
+export function isTenantAdminRole(role: string): boolean {
+  return role === "admin";
+}
+
+export function isSuperAdminRole(role: string): boolean {
+  return role === "super_admin";
 }
 
 export function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {

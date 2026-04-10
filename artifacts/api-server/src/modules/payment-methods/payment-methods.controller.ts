@@ -8,6 +8,11 @@ import {
 } from "./payment-methods.validation";
 import { createValidationError, toErrorResponse } from "../../utils/errors";
 
+function respondWithError(res: Response, error: unknown) {
+  const response = toErrorResponse(error);
+  res.status(response.statusCode).json(response.body);
+}
+
 function parseTenantId(value: string) {
   const tenantId = Number(value);
   if (!Number.isInteger(tenantId) || tenantId <= 0) {
@@ -46,8 +51,7 @@ export class PaymentMethodsController {
         updated_at: data.updatedAt.toISOString(),
       });
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   }
 
@@ -61,8 +65,7 @@ export class PaymentMethodsController {
       res.setHeader("Cache-Control", "no-store");
       res.json(data);
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   }
 
@@ -73,8 +76,7 @@ export class PaymentMethodsController {
       res.setHeader("Cache-Control", "no-store");
       res.json(data);
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   }
 
@@ -93,8 +95,7 @@ export class PaymentMethodsController {
       const data = await paymentMethodsService.updateTenantPaymentMethod(req, tenantId, codeResult.data, bodyResult.data);
       res.json(data);
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   }
 
@@ -104,8 +105,7 @@ export class PaymentMethodsController {
       res.setHeader("Cache-Control", "no-store");
       res.json(data);
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   }
 }

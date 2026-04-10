@@ -1,10 +1,11 @@
-import { pgTable, text, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tenantsTable } from "./tenants";
 import { productionOrdersTable } from "./production-orders";
 import { warehousesTable } from "./warehouses";
 import { warehouseLocationsTable } from "./warehouse-locations";
+import { fabricRollStatusSchema } from "./domain-constraints";
 
 export const fabricRollsTable = pgTable("fabric_rolls", {
   id: serial("id").primaryKey(),
@@ -25,8 +26,21 @@ export const fabricRollsTable = pgTable("fabric_rolls", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  fabricRollsTenantIdx: index("fabric_rolls_tenant_id_idx").on(table.tenantId),
+  fabricRollsProductionOrderIdx: index("fabric_rolls_production_order_id_idx").on(table.productionOrderId),
+  fabricRollsWarehouseIdx: index("fabric_rolls_warehouse_id_idx").on(table.warehouseId),
+}));
 
-export const insertFabricRollSchema = createInsertSchema(fabricRollsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertFabricRollSchema = createInsertSchema(fabricRollsTable)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    rollCode: z.string().trim().min(1).max(160),
+    batchId: z.string().trim().min(1).max(160),
+    color: z.string().trim().min(1).max(120),
+    fabricType: z.string().trim().min(1).max(120),
+    qrCode: z.string().trim().min(1).max(255),
+    status: fabricRollStatusSchema.default("CREATED"),
+  });
 export type InsertFabricRoll = z.infer<typeof insertFabricRollSchema>;
 export type FabricRoll = typeof fabricRollsTable.$inferSelect;

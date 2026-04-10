@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { requireAuth } from "../lib/auth";
+import { requireAuth, isSuperAdminRole, isTenantAdminRole } from "../lib/auth";
 import { hashPassword } from "../lib/auth";
 import { writeAdminAuditLog } from "../lib/auth";
 import { z } from "zod";
@@ -44,7 +44,7 @@ router.get("/users", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/users", requireAuth, checkSubscription(), async (req, res): Promise<void> => {
-  if (req.user!.role !== "admin") {
+  if (!isTenantAdminRole(req.user!.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -123,7 +123,7 @@ router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.patch("/users/:id", requireAuth, async (req, res): Promise<void> => {
-  if (req.user!.role !== "admin") {
+  if (!isTenantAdminRole(req.user!.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -167,7 +167,7 @@ router.patch("/users/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.delete("/users/:id", requireAuth, async (req, res): Promise<void> => {
-  if (req.user!.role !== "admin") {
+  if (!isTenantAdminRole(req.user!.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -190,7 +190,7 @@ router.delete("/users/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.patch("/admin/users/:id/password", requireAuth, async (req, res): Promise<void> => {
-  if (req.user!.role !== "admin") {
+  if (!isTenantAdminRole(req.user!.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -225,7 +225,7 @@ router.patch("/admin/users/:id/password", requireAuth, async (req, res): Promise
 });
 
 router.patch("/admin/tenants/:tenantId/users/:id/password", requireAuth, async (req, res): Promise<void> => {
-  if (req.user!.role !== "super_admin") {
+  if (!isSuperAdminRole(req.user!.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }

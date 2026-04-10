@@ -1,6 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { platformAdminRoleSchema } from "./domain-constraints";
 
 export const platformAdminsTable = pgTable("platform_admins", {
   id: serial("id").primaryKey(),
@@ -18,6 +19,10 @@ export const insertPlatformAdminSchema = createInsertSchema(platformAdminsTable)
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  email: z.string().trim().email().max(320),
+  fullName: z.string().trim().min(1).max(200),
+  role: platformAdminRoleSchema.default("readonly_admin"),
 });
 export type InsertPlatformAdmin = z.infer<typeof insertPlatformAdminSchema>;
 export type PlatformAdmin = typeof platformAdminsTable.$inferSelect;

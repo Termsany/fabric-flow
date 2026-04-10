@@ -108,6 +108,17 @@ export class PaymentMethodsRepository {
     return user ?? null;
   }
 
+  async listUsersByIds(userIds: number[]) {
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return db.select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+    }).from(usersTable).where(inArray(usersTable.id, userIds));
+  }
+
   async listPaymentMethodAuditLogs(tenantId?: number | null) {
     if (tenantId) {
       return db.select().from(paymentMethodAuditLogsTable).where(eq(paymentMethodAuditLogsTable.tenantId, tenantId));

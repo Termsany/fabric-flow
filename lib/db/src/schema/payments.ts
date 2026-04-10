@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tenantsTable } from "./tenants";
@@ -19,7 +19,11 @@ export const paymentsTable = pgTable("payments", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  paymentsTenantIdx: index("payments_tenant_id_idx").on(table.tenantId),
+  paymentsCreatedByIdx: index("payments_created_by_idx").on(table.createdBy),
+  paymentsReviewedByIdx: index("payments_reviewed_by_idx").on(table.reviewedBy),
+}));
 
 export const insertPaymentSchema = createInsertSchema(paymentsTable).omit({
   id: true,

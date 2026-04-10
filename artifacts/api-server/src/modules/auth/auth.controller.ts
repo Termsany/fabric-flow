@@ -8,9 +8,11 @@ import {
   formatCurrentUserResponse,
 } from "./auth.http";
 import {
+  CHANGE_PASSWORD_VALIDATION_MESSAGE,
   parseChangePasswordBody,
   parseLoginBody,
   parseRegisterBody,
+  type ValidationParseResult,
 } from "./auth.validation";
 
 function respondValidationError(res: Response, message: string): void {
@@ -23,6 +25,64 @@ function respondAuthError(res: Response, status: number, error: string): void {
 
 function respondInvalidCredentials(res: Response): void {
   res.status(401).json(buildInvalidCredentialsError());
+}
+
+function respondUnauthorized(res: Response): void {
+  respondAuthError(res, 401, "Unauthorized");
+}
+
+function getValidationMessage<T>(parsed: ValidationParseResult<T>, fallback?: string): string {
+  if (parsed.success) {
+    return fallback ?? "Invalid request";
+  }
+
+  return fallback ?? parsed.error.message;
+}
+
+function isAuthFailure<T>(result: {
+  ok: boolean;
+  status: number;
+  error?: string;
+  data?: T;
+}): result is {
+  ok: false;
+  status: number;
+  error: string;
+} {
+  return !result.ok;
+}
+
+function getAuthFailureResponse(result: {
+  ok: false;
+  status: number;
+  error: string;
+}) {
+  if (result.status === 401 && result.error === "Invalid credentials") {
+    return { kind: "invalid-credentials" as const };
+  }
+
+  return {
+    kind: "auth-error" as const,
+    status: result.status,
+    error: result.error,
+  };
+}
+
+function respondServiceFailure(
+  res: Response,
+  result: {
+    ok: false;
+    status: number;
+    error: string;
+  },
+): void {
+  const failure = getAuthFailureResponse(result);
+  if (failure.kind === "invalid-credentials") {
+    respondInvalidCredentials(res);
+    return;
+  }
+
+  respondAuthError(res, failure.status, failure.error);
 }
 
 export type AuthControllerDependencies = {
@@ -41,18 +101,13 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   async login(req: Request, res: Response): Promise<void> {
     const parsed = parseLoginBody(req.body);
     if (!parsed.success) {
-      respondValidationError(res, parsed.error.message);
+      respondValidationError(res, getValidationMessage(parsed));
       return;
     }
 
     const result = await authService.login(parsed.data.email, parsed.data.password);
-    if (!result.ok) {
-      if (result.status === 401 && result.error === "Invalid credentials") {
-        respondInvalidCredentials(res);
-        return;
-      }
-
-      respondAuthError(res, result.status, result.error);
+    if (isAuthFailure(result)) {
+      respondServiceFailure(res, result);
       return;
     }
 
@@ -63,13 +118,13 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   async register(req: Request, res: Response): Promise<void> {
     const parsed = parseRegisterBody(req.body);
     if (!parsed.success) {
-      respondValidationError(res, parsed.error.message);
+      respondValidationError(res, getValidationMessage(parsed));
       return;
     }
 
     const result = await authService.register(parsed.data);
-    if (!result.ok) {
-      respondAuthError(res, result.status, result.error);
+    if (isAuthFailure(result)) {
+      respondServiceFailure(res, result);
       return;
     }
 
@@ -78,9 +133,13 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   },
 
   async getMe(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      respondUnauthorized(res);
+      return;
+    }
     const result = await authService.getCurrentUser(req.user!);
-    if (!result.ok) {
-      respondAuthError(res, result.status, result.error);
+    if (isAuthFailure(result)) {
+      respondServiceFailure(res, result);
       return;
     }
 
@@ -88,15 +147,19 @@ export function createAuthController(deps: AuthControllerDependencies = { authSe
   },
 
   async changePassword(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      respondUnauthorized(res);
+      return;
+    }
     const parsed = parseChangePasswordBody(req.body);
     if (!parsed.success) {
-      respondValidationError(res, "Invalid password input");
+      respondValidationError(res, getValidationMessage(parsed, CHANGE_PASSWORD_VALIDATION_MESSAGE));
       return;
     }
 
     const result = await authService.changePassword(req.user!, { ip: req.ip }, parsed.data);
-    if (!result.ok) {
-      respondAuthError(res, result.status, result.error);
+    if (isAuthFailure(result)) {
+      respondServiceFailure(res, result);
       return;
     }
 

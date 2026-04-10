@@ -7,7 +7,7 @@ import type {
   TenantPaymentMethodDto,
 } from "./payment-methods.types";
 import { AppError, createValidationError } from "../../utils/errors";
-import { writePaymentMethodAuditLog, resolveUpdatedByName } from "../../utils/audit-log";
+import { writePaymentMethodAuditLog } from "../../utils/audit-log";
 
 type GlobalUpdateInput = {
   name_ar: string;
@@ -113,43 +113,53 @@ export class PaymentMethodsService {
 
   async listTenantPaymentMethods(tenantId: number): Promise<TenantPaymentMethodDto[]> {
     await this.initializeTenantPaymentMethods(tenantId);
-    const [definitions, tenantRows] = await Promise.all([
+    const [definitions, tenantRows, auditLogs] = await Promise.all([
       paymentMethodsRepository.listDefinitions(),
       paymentMethodsRepository.listTenantPaymentMethods(tenantId),
+      paymentMethodsRepository.listPaymentMethodAuditLogs(tenantId),
     ]);
     const rowsByCode = new Map(tenantRows.map((row) => [row.paymentMethodCode, row]));
+    const updatedByIds = [...new Set(
+      tenantRows
+        .map((row) => row.updatedBy)
+        .filter((updatedBy): updatedBy is number => typeof updatedBy === "number" && updatedBy > 0),
+    )];
+    const users = await paymentMethodsRepository.listUsersByIds(updatedByIds);
+    const userNamesById = new Map(users.map((user) => [user.id, user.fullName]));
+    const latestAuditByCode = new Map<string, string | null>();
 
-    return Promise.all(
-      definitions
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(async (definition) => {
-          const row = rowsByCode.get(definition.code);
-          let updatedByName: string | null = null;
-          if (row) {
-            updatedByName = await resolveUpdatedByName(row.updatedBy);
-            if (!updatedByName) {
-              const latestAudit = await paymentMethodsRepository.getLatestTenantMethodAuditLog(tenantId, definition.code as PaymentMethodCode);
-              updatedByName = latestAudit?.actorName ?? null;
-            }
-          }
-          return {
-            id: row?.id ?? 0,
-            tenant_id: tenantId,
-            code: definition.code as PaymentMethodCode,
-            name_ar: definition.nameAr,
-            name_en: definition.nameEn,
-            is_globally_enabled: definition.isGloballyEnabled,
-            is_active: row?.isActive ?? false,
-            account_number: row?.accountNumber ?? "",
-            account_name: row?.accountName ?? "",
-            instructions_ar: row?.instructionsAr ?? "",
-            instructions_en: row?.instructionsEn ?? "",
-            metadata: (row?.metadata as Record<string, unknown> | null) ?? {},
-            updated_at: (row?.updatedAt ?? definition.updatedAt).toISOString(),
-            updated_by_name: updatedByName,
-          };
-        }),
-    );
+    for (const log of auditLogs) {
+      if (latestAuditByCode.has(log.paymentMethodCode)) {
+        continue;
+      }
+      latestAuditByCode.set(log.paymentMethodCode, log.actorName ?? null);
+    }
+
+    return definitions
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((definition) => {
+        const row = rowsByCode.get(definition.code);
+        const updatedByName = row
+          ? userNamesById.get(row.updatedBy ?? 0) ?? latestAuditByCode.get(definition.code) ?? null
+          : null;
+
+        return {
+          id: row?.id ?? 0,
+          tenant_id: tenantId,
+          code: definition.code as PaymentMethodCode,
+          name_ar: definition.nameAr,
+          name_en: definition.nameEn,
+          is_globally_enabled: definition.isGloballyEnabled,
+          is_active: row?.isActive ?? false,
+          account_number: row?.accountNumber ?? "",
+          account_name: row?.accountName ?? "",
+          instructions_ar: row?.instructionsAr ?? "",
+          instructions_en: row?.instructionsEn ?? "",
+          metadata: (row?.metadata as Record<string, unknown> | null) ?? {},
+          updated_at: (row?.updatedAt ?? definition.updatedAt).toISOString(),
+          updated_by_name: updatedByName,
+        };
+      });
   }
 
   async listBillingVisiblePaymentMethods(tenantId: number) {
@@ -226,7 +236,11 @@ export class PaymentMethodsService {
       },
     });
 
-    let updatedByName = await resolveUpdatedByName(updated.updatedBy);
+    let updatedByName: string | null = null;
+    if (updated.updatedBy) {
+      const [user] = await paymentMethodsRepository.listUsersByIds([updated.updatedBy]);
+      updatedByName = user?.fullName ?? null;
+    }
     if (!updatedByName) {
       const latestAudit = await paymentMethodsRepository.getLatestTenantMethodAuditLog(tenantId, code);
       updatedByName = latestAudit?.actorName ?? null;

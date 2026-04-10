@@ -73,6 +73,52 @@ pnpm run dev
 pnpm run db:push
 pnpm run build
 pnpm run typecheck
+pnpm run test
+pnpm run test:auth
+pnpm run verify:api
+```
+
+## Backend Refactor Notes
+
+The backend is being standardized gradually around a small feature-module pattern:
+
+- `routes`: route wiring only
+- `controller`: request parsing + HTTP mapping
+- `service` or focused use-case files: business logic
+- `repository`: DB access
+- `validation`: request parsing helpers
+
+Current reference modules:
+
+- `auth`
+- `sales`
+- `warehouses`
+
+More detail:
+
+- [docs/auth-module.md](/home/mustafa/Roll-Manager/docs/auth-module.md)
+- [docs/backend-module-pattern.md](/home/mustafa/Roll-Manager/docs/backend-module-pattern.md)
+
+## Auth Module Notes
+
+The auth flow currently supports:
+
+- bearer sessions
+- cookie sessions
+- hybrid sessions
+
+This is intentional to keep production behavior stable while reducing coupling between backend and frontend auth handling.
+
+For quick auth-focused verification during refactors:
+
+```bash
+pnpm run test:auth
+```
+
+For a small backend safety pass before pushing:
+
+```bash
+pnpm run verify:api
 ```
 
 ## Optional Full Docker Dev Stack

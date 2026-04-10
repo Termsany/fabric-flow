@@ -4,6 +4,11 @@ import { paymentMethodsService } from "../payment-methods/payment-methods.servic
 import { plansService } from "./plans.service";
 import { applyPlanPriceAllSchema, applyPlanPriceSelectedSchema, cancelSubscriptionSchema, changePlanSchema, planUpsertSchema, subscribeSchema, updatePlanPriceSchema } from "./plans.validation";
 
+function respondWithError(res: Response, error: unknown) {
+  const response = toErrorResponse(error);
+  res.status(response.statusCode).json(response.body);
+}
+
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -14,8 +19,7 @@ export const plansController = {
     try {
       res.json(await plansService.listAdminPlans());
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -28,8 +32,7 @@ export const plansController = {
     try {
       res.status(201).json(await plansService.upsertPlan(req, null, parsed.data));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -47,8 +50,7 @@ export const plansController = {
     try {
       res.json(await plansService.upsertPlan(req, planId, parsed.data));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -66,8 +68,7 @@ export const plansController = {
     try {
       res.json(await plansService.updatePlanPrice(req, planId, parsed.data));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -85,8 +86,7 @@ export const plansController = {
     try {
       res.json(await plansService.applyPlanPriceToSubscriptions(req, planId, parsed.data));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -104,8 +104,7 @@ export const plansController = {
     try {
       res.json(await plansService.applyPlanPriceToSubscriptions(req, planId, parsed.data));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -113,8 +112,7 @@ export const plansController = {
     try {
       res.json(await plansService.listPublicPlans());
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -126,8 +124,7 @@ export const plansController = {
         paymentMethods: await paymentMethodsService.listBillingVisiblePaymentMethods(req.user!.tenantId),
       });
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -146,8 +143,7 @@ export const plansController = {
         parsed.data.paymentMethodCode,
       ));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -167,8 +163,7 @@ export const plansController = {
         parsed.data.notes ?? null,
       ));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 
@@ -186,8 +181,7 @@ export const plansController = {
         parsed.data.notes ?? null,
       ));
     } catch (error) {
-      const response = toErrorResponse(error);
-      res.status(response.statusCode).json(response.body);
+      respondWithError(res, error);
     }
   },
 };
