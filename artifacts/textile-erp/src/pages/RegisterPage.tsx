@@ -4,6 +4,7 @@ import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useRegister } from "@workspace/api-client-react";
+import { isTenantAdminRole } from "@/lib/roles";
 
 export function RegisterPage() {
   const { t, isRTL } = useLang();
@@ -12,17 +13,12 @@ export function RegisterPage() {
   const [form, setForm] = useState({ companyName: "", email: "", password: "", fullName: "" });
   const [error, setError] = useState("");
 
-  const getPostRegisterPath = (role?: string) => {
-    if (role === "admin") return "/subscription";
-    return "/dashboard";
-  };
-
   const registerMutation = useRegister({
     mutation: {
       onSuccess: (data) => {
         login(data as any);
         const role = (data as any)?.user?.role as string | undefined;
-        navigate(getPostRegisterPath(role));
+        navigate(isTenantAdminRole(role) ? "/subscription" : "/dashboard");
       },
       onError: (err: any) => {
         setError(err?.data?.error || t.serverError);

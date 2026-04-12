@@ -8,6 +8,7 @@ import type {
 } from "./payment-methods.types";
 import { AppError, createValidationError } from "../../utils/errors";
 import { writePaymentMethodAuditLog } from "../../utils/audit-log";
+import { isTenantRole } from "../../lib/auth";
 
 type GlobalUpdateInput = {
   name_ar: string;
@@ -206,7 +207,7 @@ export class PaymentMethodsService {
       instructionsAr: payload.instructions_ar || null,
       instructionsEn: payload.instructions_en || null,
       metadata: payload.metadata || {},
-      updatedBy: req.user?.role === "admin" ? req.user.userId : null,
+      updatedBy: req.user && isTenantRole(req.user.role) ? req.user.userId : null,
     });
 
     await writePaymentMethodAuditLog({

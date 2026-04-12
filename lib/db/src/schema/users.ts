@@ -10,7 +10,7 @@ export const usersTable = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   fullName: text("full_name").notNull(),
-  role: text("role").notNull().default("production"), // admin, production, qc, warehouse, sales
+  role: text("role").notNull().default("production_user"), // tenant_admin, production_user, dyeing_user, qc_user, warehouse_user, sales_user
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   passwordUpdatedAt: timestamp("password_updated_at", { withTimezone: true }),
@@ -25,7 +25,7 @@ export const insertUserSchema = createInsertSchema(usersTable)
   .extend({
     email: z.string().trim().email().max(320),
     fullName: z.string().trim().min(1).max(200),
-    role: userRoleSchema.default("production"),
+    role: userRoleSchema.default("production_user"),
   });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;

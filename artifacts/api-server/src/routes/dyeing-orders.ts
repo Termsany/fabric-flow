@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { db, dyeingOrdersTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
-import { requireAuth } from "../lib/auth";
+import { DYEING_WORKFLOW_STATUS, FABRIC_ROLL_WORKFLOW_STATUS, WORKFLOW_DEFAULTS } from "@workspace/api-zod";
+import { eq, and, desc, ilike, inArray, or } from "drizzle-orm";
+import { requireAuth, requireTenantRole } from "../lib/auth";
 import { checkPlanAccess } from "../lib/billing";
+import { formatValidationError } from "../lib/request-validation";
 import {
   ListDyeingOrdersQueryParams,
   ListDyeingOrdersResponse,
@@ -13,36 +15,65 @@ import {
   UpdateDyeingOrderBody,
   UpdateDyeingOrderResponse,
 } from "@workspace/api-zod";
+import {
+  assertDyeingTransitionAllowed,
+  assertRollsCanEnterDyeing,
+  DyeingWorkflowError,
+  formatDyeingOrderResponse,
+} from "./dyeing-orders.workflow";
+import { buildAuditChanges, pickAuditFields } from "../utils/audit-log";
+import { normalizeIdentifierSearch } from "../utils/identifiers";
 
 const router = Router();
 
-function formatOrder(o: typeof dyeingOrdersTable.$inferSelect) {
-  return {
-    id: o.id,
-    tenantId: o.tenantId,
-    orderNumber: o.orderNumber,
-    dyehouseName: o.dyehouseName,
-    targetColor: o.targetColor,
-    targetShade: o.targetShade ?? null,
-    status: o.status,
-    sentAt: o.sentAt?.toISOString() ?? null,
-    receivedAt: o.receivedAt?.toISOString() ?? null,
-    notes: o.notes ?? null,
-    rollIds: o.rollIds ?? [],
-    createdAt: o.createdAt.toISOString(),
-    updatedAt: o.updatedAt.toISOString(),
-  };
+async function listLinkedDyeingRolls(tenantId: number, rollIds: number[]) {
+  if (rollIds.length === 0) {
+    return [];
+  }
+
+  return db.select().from(fabricRollsTable).where(
+    and(inArray(fabricRollsTable.id, rollIds), eq(fabricRollsTable.tenantId, tenantId)),
+  ).orderBy(fabricRollsTable.id);
 }
 
-router.get("/dyeing-orders", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+async function formatDetailedDyeingOrder(order: typeof dyeingOrdersTable.$inferSelect) {
+  const linkedRolls = await listLinkedDyeingRolls(order.tenantId, order.rollIds ?? []);
+  return formatDyeingOrderResponse(order, linkedRolls);
+}
+
+function respondDyeingWorkflowError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof DyeingWorkflowError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
+
+router.get("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = ListDyeingOrdersQueryParams.safeParse(req.query);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    res.status(400).json({ error: formatValidationError(params.error) });
     return;
   }
 
   const conditions = [eq(dyeingOrdersTable.tenantId, req.user!.tenantId)];
   if (params.data.status) conditions.push(eq(dyeingOrdersTable.status, params.data.status));
+  const identifierSearch = normalizeIdentifierSearch(params.data.search);
+  if (identifierSearch) {
+    const searchConditions = [
+      ilike(dyeingOrdersTable.orderNumber, identifierSearch.pattern),
+      ilike(dyeingOrdersTable.dyehouseName, identifierSearch.pattern),
+      ilike(dyeingOrdersTable.targetColor, identifierSearch.pattern),
+    ];
+    if (identifierSearch.numericId != null) {
+      searchConditions.push(eq(dyeingOrdersTable.id, identifierSearch.numericId));
+    }
+    conditions.push(or(...searchConditions)!);
+  }
 
   const orders = await db.select().from(dyeingOrdersTable)
     .where(and(...conditions))
@@ -50,62 +81,74 @@ router.get("/dyeing-orders", requireAuth, checkPlanAccess("pro"), async (req, re
     .limit(params.data.limit ?? 100)
     .offset(params.data.offset ?? 0);
 
-  res.json(ListDyeingOrdersResponse.parse(orders.map(formatOrder)));
+  res.json(ListDyeingOrdersResponse.parse(orders.map((order) => formatDyeingOrderResponse(order))));
 });
 
-router.post("/dyeing-orders", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.post("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const parsed = CreateDyeingOrderBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: formatValidationError(parsed.error) });
     return;
   }
 
   const { dyehouseName, targetColor, targetShade, rollIds, notes } = parsed.data;
   const orderNumber = `DYE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const selectedRollIds = rollIds ?? [];
 
-  if (rollIds && rollIds.length > 0) {
-    const tenantRolls = await db.select({ id: fabricRollsTable.id }).from(fabricRollsTable).where(
-      and(inArray(fabricRollsTable.id, rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId))
-    );
+  try {
+    const { order, linkedRolls } = await db.transaction(async (tx) => {
+      const tenantRolls = selectedRollIds.length === 0
+        ? []
+        : await tx.select().from(fabricRollsTable).where(
+          and(inArray(fabricRollsTable.id, selectedRollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)),
+        ).orderBy(fabricRollsTable.id);
 
-    if (tenantRolls.length !== rollIds.length) {
-      res.status(400).json({ error: "One or more selected rolls do not belong to this tenant" });
+      assertRollsCanEnterDyeing(selectedRollIds, tenantRolls);
+
+      const [order] = await tx.insert(dyeingOrdersTable).values({
+        tenantId: req.user!.tenantId,
+        orderNumber,
+        dyehouseName,
+        targetColor,
+        targetShade: targetShade ?? null,
+        status: WORKFLOW_DEFAULTS.dyeingOrderStatus,
+        rollIds: selectedRollIds,
+        notes: notes ?? null,
+        sentAt: null,
+        receivedAt: null,
+      }).returning();
+
+      await tx.update(fabricRollsTable).set({ status: FABRIC_ROLL_WORKFLOW_STATUS.sentToDyeing })
+        .where(and(inArray(fabricRollsTable.id, selectedRollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)));
+
+      const linkedRolls = tenantRolls.map((roll) => ({
+        ...roll,
+        status: FABRIC_ROLL_WORKFLOW_STATUS.sentToDyeing,
+      }));
+
+      await tx.insert(auditLogsTable).values({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        entityType: "dyeing_order",
+        entityId: order.id,
+        action: "CREATE",
+        changes: JSON.stringify({ orderNumber, rollCount: selectedRollIds.length }),
+      });
+
+      return { order, linkedRolls };
+    });
+
+    res.status(201).json(GetDyeingOrderResponse.parse(formatDyeingOrderResponse(order, linkedRolls)));
+  } catch (error) {
+    if (respondDyeingWorkflowError(res, error)) {
       return;
     }
+
+    throw error;
   }
-
-  const [order] = await db.insert(dyeingOrdersTable).values({
-    tenantId: req.user!.tenantId,
-    orderNumber,
-    dyehouseName,
-    targetColor,
-    targetShade: targetShade ?? null,
-    status: "PENDING",
-    rollIds: rollIds ?? [],
-    notes: notes ?? null,
-    sentAt: null,
-    receivedAt: null,
-  }).returning();
-
-  // Update rolls status to SENT_TO_DYEING
-  if (rollIds && rollIds.length > 0) {
-    await db.update(fabricRollsTable).set({ status: "SENT_TO_DYEING" })
-      .where(and(inArray(fabricRollsTable.id, rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)));
-  }
-
-  await db.insert(auditLogsTable).values({
-    tenantId: req.user!.tenantId,
-    userId: req.user!.userId,
-    entityType: "dyeing_order",
-    entityId: order.id,
-    action: "CREATE",
-    changes: JSON.stringify({ orderNumber, rollCount: rollIds?.length ?? 0 }),
-  });
-
-  res.status(201).json(GetDyeingOrderResponse.parse(formatOrder(order)));
 });
 
-router.get("/dyeing-orders/:id", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = GetDyeingOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -121,10 +164,10 @@ router.get("/dyeing-orders/:id", requireAuth, checkPlanAccess("pro"), async (req
     return;
   }
 
-  res.json(GetDyeingOrderResponse.parse(formatOrder(order)));
+  res.json(GetDyeingOrderResponse.parse(await formatDetailedDyeingOrder(order)));
 });
 
-router.patch("/dyeing-orders/:id", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.patch("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = UpdateDyeingOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -132,32 +175,77 @@ router.patch("/dyeing-orders/:id", requireAuth, checkPlanAccess("pro"), async (r
   }
   const parsed = UpdateDyeingOrderBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: formatValidationError(parsed.error) });
     return;
   }
 
-  const updates: Record<string, unknown> = {};
-  if (parsed.data.status != null) updates.status = parsed.data.status;
-  if (parsed.data.targetShade != null) updates.targetShade = parsed.data.targetShade;
-  if (parsed.data.receivedAt != null) updates.receivedAt = new Date(parsed.data.receivedAt);
-  if (parsed.data.notes != null) updates.notes = parsed.data.notes;
+  try {
+    const order = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(dyeingOrdersTable).where(
+        and(eq(dyeingOrdersTable.id, params.data.id), eq(dyeingOrdersTable.tenantId, req.user!.tenantId)),
+      );
 
-  const [order] = await db.update(dyeingOrdersTable).set(updates).where(
-    and(eq(dyeingOrdersTable.id, params.data.id), eq(dyeingOrdersTable.tenantId, req.user!.tenantId))
-  ).returning();
+      if (!existing) {
+        return null;
+      }
 
-  if (!order) {
-    res.status(404).json({ error: "Dyeing order not found" });
-    return;
+      if (parsed.data.status != null) {
+        assertDyeingTransitionAllowed(existing, parsed.data.status);
+      }
+
+      const updates: Record<string, unknown> = {};
+      if (parsed.data.status != null) updates.status = parsed.data.status;
+      if (parsed.data.targetShade != null) updates.targetShade = parsed.data.targetShade;
+      if (parsed.data.receivedAt != null) updates.receivedAt = new Date(parsed.data.receivedAt);
+      if (parsed.data.notes != null) updates.notes = parsed.data.notes;
+      if (parsed.data.status === DYEING_WORKFLOW_STATUS.completed && parsed.data.receivedAt == null) {
+        updates.receivedAt = new Date();
+      }
+
+      const [order] = await tx.update(dyeingOrdersTable).set(updates).where(
+        and(eq(dyeingOrdersTable.id, params.data.id), eq(dyeingOrdersTable.tenantId, req.user!.tenantId))
+      ).returning();
+
+      if (parsed.data.status === DYEING_WORKFLOW_STATUS.completed && order.rollIds && order.rollIds.length > 0) {
+        await tx.update(fabricRollsTable).set({ status: FABRIC_ROLL_WORKFLOW_STATUS.finished })
+          .where(and(inArray(fabricRollsTable.id, order.rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)));
+      }
+
+      await tx.insert(auditLogsTable).values({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        entityType: "dyeing_order",
+        entityId: order.id,
+        action: parsed.data.status != null && parsed.data.status !== existing.status ? "DYEING_STATUS_CHANGED" : "UPDATE",
+        changes: buildAuditChanges({
+          before: pickAuditFields(existing, ["status", "targetShade", "receivedAt", "notes"]),
+          after: pickAuditFields(order, ["status", "targetShade", "receivedAt", "notes"]),
+          context: {
+            orderNumber: order.orderNumber,
+            rollIds: order.rollIds ?? [],
+            affectedRollStatus: parsed.data.status === DYEING_WORKFLOW_STATUS.completed
+              ? FABRIC_ROLL_WORKFLOW_STATUS.finished
+              : null,
+          },
+        }),
+      });
+
+      return order;
+    });
+
+    if (!order) {
+      res.status(404).json({ error: "Dyeing order not found" });
+      return;
+    }
+
+    res.json(UpdateDyeingOrderResponse.parse(await formatDetailedDyeingOrder(order)));
+  } catch (error) {
+    if (respondDyeingWorkflowError(res, error)) {
+      return;
+    }
+
+    throw error;
   }
-
-  // If completed, update rolls to FINISHED
-  if (parsed.data.status === "COMPLETED" && order.rollIds && order.rollIds.length > 0) {
-    await db.update(fabricRollsTable).set({ status: "FINISHED" })
-      .where(and(inArray(fabricRollsTable.id, order.rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)));
-  }
-
-  res.json(UpdateDyeingOrderResponse.parse(formatOrder(order)));
 });
 
 export default router;

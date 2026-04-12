@@ -11,7 +11,7 @@ export const qcReportsTable = pgTable("qc_reports", {
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
   fabricRollId: integer("fabric_roll_id").notNull().references(() => fabricRollsTable.id),
   inspectedById: integer("inspected_by_id").notNull().references(() => usersTable.id),
-  result: text("result").notNull(), // PASS, FAIL, SECOND
+  result: text("result").notNull(), // PASS, FAIL, PENDING, REWORK
   defects: text("defects"),
   defectCount: integer("defect_count").notNull().default(0),
   images: text("images").array().notNull().default([]),

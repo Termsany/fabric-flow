@@ -21,7 +21,7 @@ export const fabricRollsTable = pgTable("fabric_rolls", {
   gsm: real("gsm").notNull(),
   width: real("width").notNull(), // cm
   fabricType: text("fabric_type").notNull(),
-  status: text("status").notNull().default("CREATED"), // CREATED, IN_PRODUCTION, QC_PENDING, QC_PASSED, QC_FAILED, SENT_TO_DYEING, IN_DYEING, FINISHED, IN_STOCK, RESERVED, SOLD
+  status: text("status").notNull().default("CREATED"),
   qrCode: text("qr_code").notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

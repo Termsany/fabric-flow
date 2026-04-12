@@ -16,6 +16,10 @@ export interface SalesOrder {
   /** @nullable */
   notes?: string | null;
   rollIds: number[];
+  stockSources?: {
+    fabricRollId: number;
+    warehouseId?: number | null;
+  }[];
   /** @nullable */
   invoiceNumber?: string | null;
   createdAt: string;

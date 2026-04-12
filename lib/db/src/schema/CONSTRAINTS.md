@@ -1,7 +1,8 @@
 Safe schema-level constraints currently enforced in application/Drizzle schemas:
 
 - `users.role`
-  - allowed: `admin`, `production`, `qc`, `warehouse`, `sales`
+  - allowed: `tenant_admin`, `production_user`, `dyeing_user`, `qc_user`, `warehouse_user`, `sales_user`
+  - legacy values still accepted: `admin`, `production`, `qc`, `warehouse`, `sales`
 - `platform_admins.role`
   - allowed: `super_admin`, `support_admin`, `billing_admin`, `security_admin`, `readonly_admin`
 - `tenants.billing_status`

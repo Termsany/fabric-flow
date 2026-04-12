@@ -9,6 +9,7 @@ import { approveAdminPayment, listAdminPayments, markAdminPaymentForReview, reje
 import { fetchProtectedAsset } from "@/lib/auth";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { StatusBadge } from "@/components/StatusBadge";
+import { hasPlatformAdminPermission } from "@/lib/roles";
 
 export function AdminPaymentsPage() {
   const { t, lang } = useLang();
@@ -22,7 +23,7 @@ export function AdminPaymentsPage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null);
 
-  const canReview = user?.role === "super_admin" || user?.role === "billing_admin";
+  const canReview = hasPlatformAdminPermission(user?.role, "billing.write");
 
   const load = async () => {
     setError("");

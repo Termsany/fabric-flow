@@ -8,13 +8,13 @@ import { KeyRound, Plus, X } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { resetUserPassword } from "@/lib/password";
 
-const ROLES = ["admin", "production", "qc", "warehouse", "sales"];
+const ROLES = ["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"];
 
 export function UsersPage() {
   const { t, lang } = useLang();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "production" });
+  const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "production_user" });
   const [resetUser, setResetUser] = useState<{ id: number; fullName: string } | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,7 +27,7 @@ export function UsersPage() {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListUsersQueryKey() });
         setShowCreate(false);
-        setForm({ fullName: "", email: "", password: "", role: "production" });
+        setForm({ fullName: "", email: "", password: "", role: "production_user" });
       },
     },
   });

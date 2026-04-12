@@ -1,32 +1,29 @@
 import type { Request, Response } from "express";
 import {
   GetWarehouseResponse,
+  GetInventoryReportResponse,
+  ListWarehouseMovementsResponseItem,
   ListWarehouseMovementsResponse,
   ListWarehousesResponse,
   UpdateWarehouseResponse,
 } from "@workspace/api-zod";
+import {
+  respondDomainError,
+  respondInvalidId,
+  respondNotFound,
+  respondValidationError,
+} from "../../lib/controller-responses";
 import { warehousesService } from "./warehouses.service";
 import {
+  getWarehouseValidationMessage,
   parseCreateWarehouseBody,
   parseCreateWarehouseMovementBody,
+  parseGetInventoryReportQuery,
   parseGetWarehouseParams,
   parseListWarehouseMovementsQuery,
   parseUpdateWarehouseBody,
   parseUpdateWarehouseParams,
 } from "./warehouses.validation";
-
-function respondValidationError(res: Response, message: string): void {
-  res.status(400).json({ error: message });
-}
-
-function respondInvalidId(res: Response): void {
-  res.status(400).json({ error: "Invalid ID" });
-}
-
-function respondNotFound(res: Response, entity: "Warehouse" | "movement"): void {
-  const message = entity === "Warehouse" ? "Warehouse not found" : "Warehouse movement not found";
-  res.status(404).json({ error: message });
-}
 
 function respondWarehouseLimitReached(
   res: Response,
@@ -43,7 +40,7 @@ function respondWarehouseMovementFailure(
   res: Response,
   result: { error: string; status?: number },
 ): void {
-  res.status(result.status ?? 404).json({ error: result.error });
+  respondDomainError(res, result);
 }
 
 function hasWarehouseLimitError(
@@ -72,6 +69,7 @@ export type WarehousesControllerDependencies = {
     updateWarehouse: typeof warehousesService.updateWarehouse;
     listWarehouseMovements: typeof warehousesService.listWarehouseMovements;
     createWarehouseMovement: typeof warehousesService.createWarehouseMovement;
+    getInventoryReport: typeof warehousesService.getInventoryReport;
   };
 };
 
@@ -86,10 +84,21 @@ export function createWarehousesController(
       res.json(ListWarehousesResponse.parse(warehouses));
     },
 
+    async getInventoryReport(req: Request, res: Response): Promise<void> {
+      const params = parseGetInventoryReportQuery(req.query);
+      if (!params.success) {
+        respondValidationError(res, getWarehouseValidationMessage(params.error));
+        return;
+      }
+
+      const report = await warehousesService.getInventoryReport(req.user!.tenantId, params.data);
+      res.json(GetInventoryReportResponse.parse(report));
+    },
+
     async createWarehouse(req: Request, res: Response): Promise<void> {
       const parsed = parseCreateWarehouseBody(req.body);
       if (!parsed.success) {
-        respondValidationError(res, parsed.error.message);
+        respondValidationError(res, getWarehouseValidationMessage(parsed.error));
         return;
       }
 
@@ -111,7 +120,7 @@ export function createWarehousesController(
 
       const warehouse = await warehousesService.getWarehouse(req.user!.tenantId, params.data.id);
       if (!warehouse) {
-        respondNotFound(res, "Warehouse");
+        respondNotFound(res, "Warehouse not found");
         return;
       }
 
@@ -126,13 +135,13 @@ export function createWarehousesController(
       }
       const parsed = parseUpdateWarehouseBody(req.body);
       if (!parsed.success) {
-        respondValidationError(res, parsed.error.message);
+        respondValidationError(res, getWarehouseValidationMessage(parsed.error));
         return;
       }
 
       const warehouse = await warehousesService.updateWarehouse(req.user!.tenantId, params.data.id, parsed.data);
       if (!warehouse) {
-        respondNotFound(res, "Warehouse");
+        respondNotFound(res, "Warehouse not found");
         return;
       }
 
@@ -142,7 +151,7 @@ export function createWarehousesController(
     async listWarehouseMovements(req: Request, res: Response): Promise<void> {
       const params = parseListWarehouseMovementsQuery(req.query);
       if (!params.success) {
-        respondValidationError(res, params.error.message);
+        respondValidationError(res, getWarehouseValidationMessage(params.error));
         return;
       }
 
@@ -153,7 +162,7 @@ export function createWarehousesController(
     async createWarehouseMovement(req: Request, res: Response): Promise<void> {
       const parsed = parseCreateWarehouseMovementBody(req.body);
       if (!parsed.success) {
-        respondValidationError(res, parsed.error.message);
+        respondValidationError(res, getWarehouseValidationMessage(parsed.error));
         return;
       }
 
@@ -167,7 +176,7 @@ export function createWarehousesController(
         return;
       }
 
-      res.status(201).json(result.data);
+      res.status(201).json(ListWarehouseMovementsResponseItem.parse(result.data));
     },
   };
 }

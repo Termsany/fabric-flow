@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { isTenantAdminRole } from "@/lib/roles";
 import { Layout } from "@/components/Layout";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FABRIC_ROLL_WORKFLOW_STATUS, SALES_WORKFLOW_STATUS } from "@/lib/workflow-statuses";
 import {
   useListCustomers,
   useCreateCustomer,
@@ -25,13 +27,22 @@ export function SalesPage() {
   const [tab, setTab] = useState<"orders" | "customers">("orders");
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
   const [selectedRolls, setSelectedRolls] = useState<number[]>([]);
   const [custForm, setCustForm] = useState({ name: "", email: "", phone: "", address: "", taxNumber: "" });
   const [orderForm, setOrderForm] = useState({ customerId: "", totalAmount: "", notes: "" });
 
-  const { data: customers, isLoading: custLoading, error: customersError } = useListCustomers({});
-  const { data: orders, isLoading: ordLoading, error: ordersError } = useListSalesOrders({});
-  const { data: availableRolls, error: rollsError } = useListFabricRolls({ status: "IN_STOCK", limit: 200 });
+  const normalizedOrderSearch = orderSearch.trim();
+  const normalizedCustomerSearch = customerSearch.trim();
+  const { data: customers, isLoading: custLoading, error: customersError } = useListCustomers(
+    tab === "customers" && normalizedCustomerSearch ? { search: normalizedCustomerSearch } : {},
+  );
+  const { data: orders, isLoading: ordLoading, error: ordersError } = useListSalesOrders(
+    normalizedOrderSearch ? { search: normalizedOrderSearch } : {},
+  );
+  const { data: availableRolls, error: rollsError } = useListFabricRolls({ status: FABRIC_ROLL_WORKFLOW_STATUS.inStock, limit: 200 });
+  const customersCount = (customers || []).length;
 
   const createCustomer = useCreateCustomer({
     mutation: {
@@ -118,7 +129,7 @@ export function SalesPage() {
       {accessErrorMessage && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
           <div className="font-medium">{accessErrorMessage}</div>
-          {accessError?.status === 403 && user?.role === "admin" && (
+          {accessError?.status === 403 && isTenantAdminRole(user?.role) && (
             <div className="mt-3">
               <Link href="/billing" className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700">
                 {t.goToBilling}
@@ -127,6 +138,17 @@ export function SalesPage() {
           )}
         </div>
       )}
+
+      <div className="mb-4">
+        <input
+          value={tab === "orders" ? orderSearch : customerSearch}
+          onChange={(event) => tab === "orders" ? setOrderSearch(event.target.value) : setCustomerSearch(event.target.value)}
+          placeholder={tab === "orders"
+            ? `${t.search} ${t.orderNumber} / ${t.invoiceNumber} / ID...`
+            : `${t.search} ${t.customerName}...`}
+          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
 
       {/* Create Customer Modal */}
       {showCreateCustomer && (
@@ -240,7 +262,21 @@ export function SalesPage() {
                 ) : accessErrorMessage ? (
                   <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-400">{accessErrorMessage}</td></tr>
                 ) : (customers || []).length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-400">{t.noCustomersYet}</td></tr>
+                  <tr>
+                    <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <div>{t.noCustomersYet}</div>
+                        <div className="text-xs text-slate-500">{t.emptyCustomersHint}</div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateCustomer(true)}
+                          className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                        >
+                          {t.emptyCustomersCta}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ) : (
                   (customers || []).map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50">
@@ -284,7 +320,34 @@ export function SalesPage() {
                 ) : accessErrorMessage ? (
                   <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">{accessErrorMessage}</td></tr>
                 ) : (orders || []).length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">{t.noSalesOrdersYet}</td></tr>
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <div>{t.noSalesOrdersYet}</div>
+                        <div className="text-xs text-slate-500">{t.emptySalesOrdersHint}</div>
+                        {customersCount === 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab("customers");
+                              setShowCreateCustomer(true);
+                            }}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                          >
+                            {t.emptySalesOrdersCustomerCta}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateOrder(true)}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                          >
+                            {t.emptySalesOrdersCta}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 ) : (
                   (orders || []).map((order) => {
                     const customer = (customers || []).find((c) => c.id === order.customerId);
@@ -298,13 +361,13 @@ export function SalesPage() {
                         <td className="px-4 py-3 text-slate-400 text-xs">{formatDate(order.createdAt, lang)}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {order.status === "DRAFT" && (
-                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: "CONFIRMED" } })}
-                                className="text-blue-600 hover:text-blue-800 text-xs font-medium">{t.CONFIRMED}</button>
+                            {order.status === SALES_WORKFLOW_STATUS.draft && (
+                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.confirmed } })}
+                                className="text-blue-600 hover:text-blue-800 text-xs font-medium">{(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.confirmed] || SALES_WORKFLOW_STATUS.confirmed}</button>
                             )}
-                            {order.status === "CONFIRMED" && (
-                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: "DELIVERED" } })}
-                                className="text-green-600 hover:text-green-800 text-xs font-medium">{t.DELIVERED}</button>
+                            {order.status === SALES_WORKFLOW_STATUS.confirmed && (
+                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.delivered } })}
+                                className="text-green-600 hover:text-green-800 text-xs font-medium">{(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.delivered] || SALES_WORKFLOW_STATUS.delivered}</button>
                             )}
                           </div>
                         </td>

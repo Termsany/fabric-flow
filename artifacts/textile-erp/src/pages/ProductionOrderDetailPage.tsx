@@ -5,6 +5,37 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useGetProductionOrder, useListFabricRolls } from "@workspace/api-client-react";
 import { ArrowLeft } from "lucide-react";
 
+type LinkedProductionRoll = {
+  id: number;
+  rollCode: string;
+  status: string;
+  color?: string;
+  length?: number;
+  weight?: number;
+  warehouseId?: number | null;
+};
+
+type ProductionOrderDetailView = {
+  linkedFabricRolls?: LinkedProductionRoll[];
+  workflow?: {
+    currentState: string;
+    rollCountsByStatus: Record<string, number>;
+    readiness: {
+      totalRolls: number;
+      readyForQc: number;
+      readyForDyeing: number;
+      readyForWarehouse: number;
+      readyForSales: number;
+      sold: number;
+    };
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
+};
+
 export function ProductionOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t, isRTL } = useLang();
@@ -24,6 +55,10 @@ export function ProductionOrderDetailPage() {
   }
 
   if (!order) return <Layout><div className="text-center py-20 text-slate-400">{t.noData}</div></Layout>;
+
+  const orderDetail = order as typeof order & ProductionOrderDetailView;
+  const linkedRolls: LinkedProductionRoll[] = orderDetail.linkedFabricRolls?.length ? orderDetail.linkedFabricRolls : rolls || [];
+  const workflow = orderDetail.workflow;
 
   return (
     <Layout>
@@ -56,9 +91,44 @@ export function ProductionOrderDetailPage() {
         ))}
       </div>
 
+      {workflow && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{t.workflowState}</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">{workflow.currentState}</div>
+              <div className="mt-2 text-sm text-slate-600">
+                {workflow.nextStep.description || t.workflowNoAction}
+              </div>
+            </div>
+            {workflow.nextStep.route && (
+              <Link href={workflow.nextStep.route}>
+                <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                  {workflow.nextStep.action || t.workflowOpenNextStep}
+                </button>
+              </Link>
+            )}
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+            {[
+              { label: t.workflowReadyForQc, value: workflow.readiness.readyForQc },
+              { label: t.workflowReadyForDyeing, value: workflow.readiness.readyForDyeing },
+              { label: t.workflowReadyForWarehouse, value: workflow.readiness.readyForWarehouse },
+              { label: t.workflowReadyForSales, value: workflow.readiness.readyForSales },
+              { label: t.workflowSold, value: workflow.readiness.sold },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+                <div className="text-xs text-slate-400">{label}</div>
+                <div className="mt-1 text-xl font-bold text-slate-800">{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200">
-          <h3 className="text-base font-semibold text-slate-800">{t.fabricRolls} ({rolls?.length || 0})</h3>
+          <h3 className="text-base font-semibold text-slate-800">{t.fabricRolls} ({linkedRolls?.length || 0})</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -73,12 +143,12 @@ export function ProductionOrderDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(rolls || []).map((roll) => (
+              {linkedRolls.map((roll) => (
                 <tr key={roll.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700">{roll.rollCode}</td>
-                  <td className="px-4 py-3 text-slate-600">{roll.color}</td>
-                  <td className="px-4 py-3 text-slate-600">{roll.length}m</td>
-                  <td className="px-4 py-3 text-slate-600">{roll.weight}kg</td>
+                  <td className="px-4 py-3 text-slate-600">{roll.color || order.rawColor}</td>
+                  <td className="px-4 py-3 text-slate-600">{roll.length != null ? `${roll.length}m` : "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{roll.weight != null ? `${roll.weight}kg` : "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={roll.status} /></td>
                   <td className="px-4 py-3">
                     <Link href={`/fabric-rolls/${roll.id}`}>

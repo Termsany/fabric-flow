@@ -13,7 +13,7 @@ export const productionOrdersTable = pgTable("production_orders", {
   width: real("width").notNull(),
   rawColor: text("raw_color").notNull(),
   quantity: integer("quantity").notNull(),
-  status: text("status").notNull().default("PENDING"), // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  status: text("status").notNull().default("PENDING"),
   notes: text("notes"),
   rollsGenerated: integer("rolls_generated").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

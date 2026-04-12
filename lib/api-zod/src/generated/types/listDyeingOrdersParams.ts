@@ -8,6 +8,7 @@
 
 export type ListDyeingOrdersParams = {
   status?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 };

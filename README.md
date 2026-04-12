@@ -71,6 +71,7 @@ pnpm run dev
 
 ```bash
 pnpm run db:push
+pnpm run db:push:prod
 pnpm run build
 pnpm run typecheck
 pnpm run test
@@ -99,6 +100,14 @@ More detail:
 - [docs/auth-module.md](/home/mustafa/Roll-Manager/docs/auth-module.md)
 - [docs/backend-module-pattern.md](/home/mustafa/Roll-Manager/docs/backend-module-pattern.md)
 
+Additional docs:
+
+- [docs/api-error-conventions.md](/home/mustafa/Roll-Manager/docs/api-error-conventions.md)
+- [docs/identifier-rules.md](/home/mustafa/Roll-Manager/docs/identifier-rules.md)
+- [docs/domain-model.md](/home/mustafa/Roll-Manager/docs/domain-model.md)
+- [docs/module-alignment-plan.md](/home/mustafa/Roll-Manager/docs/module-alignment-plan.md)
+- [docs/stabilization-notes.md](/home/mustafa/Roll-Manager/docs/stabilization-notes.md)
+
 ## Auth Module Notes
 
 The auth flow currently supports:
@@ -108,6 +117,12 @@ The auth flow currently supports:
 - hybrid sessions
 
 This is intentional to keep production behavior stable while reducing coupling between backend and frontend auth handling.
+
+Cookie session deployment notes:
+
+- If `AUTH_SESSION_MODE` is `cookie` or `hybrid`, set `CORS_ALLOWED_ORIGINS` to your frontend origin(s).
+- For cross-site auth (separate app and API domains), set `AUTH_COOKIE_SAMESITE=none` and ensure HTTPS.
+- Optionally scope cookies with `AUTH_COOKIE_DOMAIN` and `AUTH_COOKIE_PATH` if needed.
 
 For quick auth-focused verification during refactors:
 
@@ -218,3 +233,18 @@ GitHub Actions expects these repository variables:
 And this repository secret:
 
 - `AWS_ROLE_TO_ASSUME`
+
+## Production DB Release Order (Safe Path)
+
+Use this order to reduce risk during a first production launch:
+
+1. Provision the database (RDS/Fly Postgres).
+2. Configure secrets (especially `DATABASE_URL`, `JWT_SECRET`, `APP_URL`).
+3. Apply schema using a one-off release step:
+   - `pnpm run db:push:prod`
+4. Deploy the API service.
+5. Deploy the frontend (after `VITE_API_URL` is correct).
+
+Notes:
+- `pnpm run db:push` is intended for local dev only (it reads from `.env`).
+- For ECS, prefer a one-off task or a CI step that runs `pnpm run db:push:prod` before switching traffic.

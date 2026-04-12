@@ -10,7 +10,7 @@ export const salesOrdersTable = pgTable("sales_orders", {
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
   orderNumber: text("order_number").notNull(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id),
-  status: text("status").notNull().default("DRAFT"), // DRAFT, CONFIRMED, INVOICED, DELIVERED, CANCELLED
+  status: text("status").notNull().default("DRAFT"),
   totalAmount: real("total_amount").notNull().default(0),
   rollIds: integer("roll_ids").array().notNull().default([]),
   invoiceNumber: text("invoice_number"),

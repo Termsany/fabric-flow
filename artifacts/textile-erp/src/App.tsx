@@ -32,6 +32,7 @@ import { SubscriptionPage } from "@/pages/SubscriptionPage";
 import NotFound from "@/pages/not-found";
 import { useLang } from "@/contexts/LangContext";
 import { Toaster } from "@/components/ui/toaster";
+import { getHomeRouteForRole, isPlatformAdminRole, isRoleAllowed, isTenantAdminRole } from "@/lib/roles";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,7 +67,7 @@ function ProtectedRoute({
     return <Redirect to="/login" />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user?.role || "")) {
+  if (allowedRoles && !isRoleAllowed(allowedRoles, user?.role)) {
     return <Redirect to={getHomeRouteForRole(user?.role)} />;
   }
 
@@ -74,22 +75,11 @@ function ProtectedRoute({
     return <Redirect to={getHomeRouteForRole(user?.role)} />;
   }
 
-  if (adminOnly && user?.role !== "admin") {
+  if (adminOnly && !isTenantAdminRole(user?.role)) {
     return <Redirect to="/dashboard" />;
   }
 
   return <Component />;
-}
-
-function isPlatformAdminRole(role?: string | null) {
-  return ["super_admin", "support_admin", "billing_admin", "security_admin", "readonly_admin"].includes(role || "");
-}
-
-function getHomeRouteForRole(role?: string | null) {
-  if (role === "billing_admin") return "/admin/billing";
-  if (role === "security_admin") return "/admin/monitoring";
-  if (isPlatformAdminRole(role)) return "/admin/tenants";
-  return "/dashboard";
 }
 
 function HomeRoute() {
@@ -115,15 +105,15 @@ function Router() {
       <Route path="/admin/billing" component={() => <ProtectedRoute component={AdminBillingPage} allowedRoles={["super_admin", "billing_admin", "readonly_admin"]} />} />
       <Route path="/admin/payments" component={() => <ProtectedRoute component={AdminPaymentsPage} allowedRoles={["super_admin", "billing_admin", "readonly_admin"]} />} />
       <Route path="/admin/monitoring" component={() => <ProtectedRoute component={AdminMonitoringPage} allowedRoles={["super_admin", "support_admin", "security_admin", "readonly_admin"]} />} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
-      <Route path="/fabric-rolls" component={() => <ProtectedRoute component={FabricRollsPage} />} />
-      <Route path="/fabric-rolls/:id" component={() => <ProtectedRoute component={FabricRollDetailPage} />} />
-      <Route path="/production-orders" component={() => <ProtectedRoute component={ProductionOrdersPage} />} />
-      <Route path="/production-orders/:id" component={() => <ProtectedRoute component={ProductionOrderDetailPage} />} />
-      <Route path="/qc" component={() => <ProtectedRoute component={QualityControlPage} />} />
-      <Route path="/dyeing" component={() => <ProtectedRoute component={DyeingPage} />} />
-      <Route path="/warehouses" component={() => <ProtectedRoute component={WarehousePage} />} />
-      <Route path="/sales" component={() => <ProtectedRoute component={SalesPage} />} />
+      <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} allowedRoles={["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]} />} />
+      <Route path="/fabric-rolls" component={() => <ProtectedRoute component={FabricRollsPage} allowedRoles={["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]} />} />
+      <Route path="/fabric-rolls/:id" component={() => <ProtectedRoute component={FabricRollDetailPage} allowedRoles={["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]} />} />
+      <Route path="/production-orders" component={() => <ProtectedRoute component={ProductionOrdersPage} allowedRoles={["tenant_admin", "production_user"]} />} />
+      <Route path="/production-orders/:id" component={() => <ProtectedRoute component={ProductionOrderDetailPage} allowedRoles={["tenant_admin", "production_user"]} />} />
+      <Route path="/qc" component={() => <ProtectedRoute component={QualityControlPage} allowedRoles={["tenant_admin", "qc_user"]} />} />
+      <Route path="/dyeing" component={() => <ProtectedRoute component={DyeingPage} allowedRoles={["tenant_admin", "dyeing_user"]} />} />
+      <Route path="/warehouses" component={() => <ProtectedRoute component={WarehousePage} allowedRoles={["tenant_admin", "warehouse_user"]} />} />
+      <Route path="/sales" component={() => <ProtectedRoute component={SalesPage} allowedRoles={["tenant_admin", "sales_user"]} />} />
       <Route path="/users" component={() => <ProtectedRoute component={UsersPage} adminOnly />} />
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} adminOnly />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} adminOnly />} />

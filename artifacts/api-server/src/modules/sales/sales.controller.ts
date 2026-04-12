@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import {
   CreateCustomerBody,
-  CreateSalesOrderBody,
   GetCustomerParams,
   GetCustomerResponse,
+  GetSalesReportQueryParams,
+  GetSalesReportResponse,
   GetSalesOrderParams,
   GetSalesOrderResponse,
   ListCustomersQueryParams,
@@ -13,11 +14,21 @@ import {
   UpdateCustomerBody,
   UpdateCustomerParams,
   UpdateCustomerResponse,
-  UpdateSalesOrderBody,
   UpdateSalesOrderParams,
   UpdateSalesOrderResponse,
 } from "@workspace/api-zod";
+import {
+  respondDomainError,
+  respondInvalidId,
+  respondNotFound,
+  respondValidationError,
+} from "../../lib/controller-responses";
 import { salesService } from "./sales.service";
+import { parseCreateSalesOrderBody, parseUpdateSalesOrderBody } from "./sales.validation";
+
+function isServiceError(result: unknown): result is { error: string; status?: number } {
+  return typeof result === "object" && result !== null && "error" in result;
+}
 
 export type SalesControllerDependencies = {
   salesService: {
@@ -26,6 +37,7 @@ export type SalesControllerDependencies = {
     getCustomer: typeof salesService.getCustomer;
     updateCustomer: typeof salesService.updateCustomer;
     listSalesOrders: typeof salesService.listSalesOrders;
+    getSalesReport: typeof salesService.getSalesReport;
     createSalesOrder: typeof salesService.createSalesOrder;
     getSalesOrder: typeof salesService.getSalesOrder;
     updateSalesOrder: typeof salesService.updateSalesOrder;
@@ -39,7 +51,7 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async listCustomers(req: Request, res: Response): Promise<void> {
     const params = ListCustomersQueryParams.safeParse(req.query);
     if (!params.success) {
-      res.status(400).json({ error: params.error.message });
+      respondValidationError(res, params.error);
       return;
     }
 
@@ -50,7 +62,7 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async createCustomer(req: Request, res: Response): Promise<void> {
     const parsed = CreateCustomerBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.message });
+      respondValidationError(res, parsed.error);
       return;
     }
 
@@ -61,13 +73,13 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async getCustomer(req: Request, res: Response): Promise<void> {
     const params = GetCustomerParams.safeParse(req.params);
     if (!params.success) {
-      res.status(400).json({ error: "Invalid ID" });
+      respondInvalidId(res);
       return;
     }
 
     const customer = await salesService.getCustomer(req.user!.tenantId, params.data.id);
     if (!customer) {
-      res.status(404).json({ error: "Customer not found" });
+      respondNotFound(res, "Customer not found");
       return;
     }
 
@@ -77,18 +89,18 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async updateCustomer(req: Request, res: Response): Promise<void> {
     const params = UpdateCustomerParams.safeParse(req.params);
     if (!params.success) {
-      res.status(400).json({ error: "Invalid ID" });
+      respondInvalidId(res);
       return;
     }
     const parsed = UpdateCustomerBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.message });
+      respondValidationError(res, parsed.error);
       return;
     }
 
     const customer = await salesService.updateCustomer(req.user!.tenantId, params.data.id, parsed.data);
     if (!customer) {
-      res.status(404).json({ error: "Customer not found" });
+      respondNotFound(res, "Customer not found");
       return;
     }
 
@@ -98,7 +110,7 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async listSalesOrders(req: Request, res: Response): Promise<void> {
     const params = ListSalesOrdersQueryParams.safeParse(req.query);
     if (!params.success) {
-      res.status(400).json({ error: params.error.message });
+      respondValidationError(res, params.error);
       return;
     }
 
@@ -106,16 +118,27 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
     res.json(ListSalesOrdersResponse.parse(orders));
   },
 
+  async getSalesReport(req: Request, res: Response): Promise<void> {
+    const params = GetSalesReportQueryParams.safeParse(req.query);
+    if (!params.success) {
+      respondValidationError(res, params.error);
+      return;
+    }
+
+    const report = await salesService.getSalesReport(req.user!.tenantId, params.data);
+    res.json(GetSalesReportResponse.parse(report));
+  },
+
   async createSalesOrder(req: Request, res: Response): Promise<void> {
-    const parsed = CreateSalesOrderBody.safeParse(req.body);
+    const parsed = parseCreateSalesOrderBody(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.message });
+      respondValidationError(res, parsed.error);
       return;
     }
 
     const result = await salesService.createSalesOrder(req.user!.tenantId, req.user!.userId, parsed.data);
-    if ("error" in result) {
-      res.status(result.status ?? 404).json({ error: result.error });
+    if (isServiceError(result)) {
+      respondDomainError(res, result);
       return;
     }
 
@@ -125,13 +148,13 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async getSalesOrder(req: Request, res: Response): Promise<void> {
     const params = GetSalesOrderParams.safeParse(req.params);
     if (!params.success) {
-      res.status(400).json({ error: "Invalid ID" });
+      respondInvalidId(res);
       return;
     }
 
     const order = await salesService.getSalesOrder(req.user!.tenantId, params.data.id);
     if (!order) {
-      res.status(404).json({ error: "Sales order not found" });
+      respondNotFound(res, "Sales order not found");
       return;
     }
 
@@ -141,18 +164,18 @@ export function createSalesController(deps: SalesControllerDependencies = { sale
   async updateSalesOrder(req: Request, res: Response): Promise<void> {
     const params = UpdateSalesOrderParams.safeParse(req.params);
     if (!params.success) {
-      res.status(400).json({ error: "Invalid ID" });
+      respondInvalidId(res);
       return;
     }
-    const parsed = UpdateSalesOrderBody.safeParse(req.body);
+    const parsed = parseUpdateSalesOrderBody(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.message });
+      respondValidationError(res, parsed.error);
       return;
     }
 
-    const result = await salesService.updateSalesOrder(req.user!.tenantId, params.data.id, parsed.data);
-    if ("error" in result) {
-      res.status(404).json({ error: result.error });
+    const result = await salesService.updateSalesOrder(req.user!.tenantId, params.data.id, parsed.data, req.user!.userId);
+    if (isServiceError(result)) {
+      respondDomainError(res, result);
       return;
     }
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../../lib/auth";
+import { requireAuth, requireTenantRole } from "../../lib/auth";
 import { checkSubscription } from "../../lib/billing";
 import { warehousesController } from "./warehouses.controller";
 
@@ -17,15 +17,22 @@ function registerWarehouseRoutes(
     warehousesController: typeof warehousesController;
   },
 ) {
-  router.get("/warehouses", deps.requireAuth, deps.warehousesController.listWarehouses);
+  router.get(
+    "/warehouses/inventory-report",
+    deps.requireAuth,
+    requireTenantRole(["warehouse_user"]),
+    deps.warehousesController.getInventoryReport,
+  );
+  router.get("/warehouses", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.listWarehouses);
   router.post(
     "/warehouses",
     deps.requireAuth,
+    requireTenantRole(["warehouse_user"]),
     deps.checkSubscription(),
     deps.warehousesController.createWarehouse,
   );
-  router.get("/warehouses/:id", deps.requireAuth, deps.warehousesController.getWarehouse);
-  router.patch("/warehouses/:id", deps.requireAuth, deps.warehousesController.updateWarehouse);
+  router.get("/warehouses/:id", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.getWarehouse);
+  router.patch("/warehouses/:id", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.updateWarehouse);
 }
 
 function registerWarehouseMovementRoutes(
@@ -35,8 +42,8 @@ function registerWarehouseMovementRoutes(
     warehousesController: typeof warehousesController;
   },
 ) {
-  router.get("/warehouse-movements", deps.requireAuth, deps.warehousesController.listWarehouseMovements);
-  router.post("/warehouse-movements", deps.requireAuth, deps.warehousesController.createWarehouseMovement);
+  router.get("/warehouse-movements", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.listWarehouseMovements);
+  router.post("/warehouse-movements", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.createWarehouseMovement);
 }
 
 export function createWarehousesRoutes(

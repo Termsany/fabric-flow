@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { db, fabricRollsTable, productionOrdersTable, dyeingOrdersTable, salesOrdersTable, customersTable, auditLogsTable, usersTable } from "@workspace/db";
+import { db, fabricRollsTable, productionOrdersTable, dyeingOrdersTable, salesOrdersTable, customersTable, auditLogsTable, usersTable, qcReportsTable } from "@workspace/db";
 import { eq, and, count, desc, sql, gte } from "drizzle-orm";
-import { requireAuth } from "../lib/auth";
+import { requireAuth, requireTenantAdmin, requireTenantRole } from "../lib/auth";
 import { checkPlanAccess } from "../lib/billing";
 import {
   GetDashboardStatsResponse,
@@ -15,7 +15,11 @@ import {
 
 const router = Router();
 
-router.get("/dashboard/stats", requireAuth, async (req, res): Promise<void> => {
+router.get(
+  "/dashboard/stats",
+  requireAuth,
+  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;
 
   const [rollCounts] = await db.select({
@@ -28,11 +32,21 @@ router.get("/dashboard/stats", requireAuth, async (req, res): Promise<void> => {
     inStock: sql<number>`count(*) filter (where status = 'IN_STOCK')`.mapWith(Number),
     reserved: sql<number>`count(*) filter (where status = 'RESERVED')`.mapWith(Number),
     sold: sql<number>`count(*) filter (where status = 'SOLD')`.mapWith(Number),
+    active: sql<number>`count(*) filter (where status <> 'SOLD')`.mapWith(Number),
   }).from(fabricRollsTable).where(eq(fabricRollsTable.tenantId, tenantId));
 
   const [productionCounts] = await db.select({
     active: sql<number>`count(*) filter (where status = 'IN_PROGRESS')`.mapWith(Number),
+    total: count(),
   }).from(productionOrdersTable).where(eq(productionOrdersTable.tenantId, tenantId));
+
+  const [qcOutcomeCounts] = await db.select({
+    total: count(),
+    passed: sql<number>`count(*) filter (where result = 'PASS')`.mapWith(Number),
+    failed: sql<number>`count(*) filter (where result = 'FAIL')`.mapWith(Number),
+    pending: sql<number>`count(*) filter (where result = 'PENDING')`.mapWith(Number),
+    rework: sql<number>`count(*) filter (where result = 'REWORK')`.mapWith(Number),
+  }).from(qcReportsTable).where(eq(qcReportsTable.tenantId, tenantId));
 
   const [dyeingCounts] = await db.select({
     active: sql<number>`count(*) filter (where status not in ('COMPLETED', 'CANCELLED'))`.mapWith(Number),
@@ -40,6 +54,10 @@ router.get("/dashboard/stats", requireAuth, async (req, res): Promise<void> => {
 
   const [salesCounts] = await db.select({
     pending: sql<number>`count(*) filter (where status in ('DRAFT', 'CONFIRMED'))`.mapWith(Number),
+    total: count(),
+    delivered: sql<number>`count(*) filter (where status = 'DELIVERED')`.mapWith(Number),
+    totalRevenue: sql<number>`coalesce(sum(total_amount), 0)`.mapWith(Number),
+    deliveredRevenue: sql<number>`coalesce(sum(total_amount) filter (where status = 'DELIVERED'), 0)`.mapWith(Number),
   }).from(salesOrdersTable).where(eq(salesOrdersTable.tenantId, tenantId));
 
   const [customerCounts] = await db.select({ total: count() }).from(customersTable).where(eq(customersTable.tenantId, tenantId));
@@ -54,14 +72,39 @@ router.get("/dashboard/stats", requireAuth, async (req, res): Promise<void> => {
     inStock: rollCounts.inStock,
     reserved: rollCounts.reserved,
     sold: rollCounts.sold,
+    activeRolls: rollCounts.active,
     activeProductionOrders: productionCounts.active,
     activeDyeingOrders: dyeingCounts.active,
     pendingSalesOrders: salesCounts.pending,
     totalCustomers: customerCounts.total,
+    qcOutcomes: {
+      total: qcOutcomeCounts.total,
+      passed: qcOutcomeCounts.passed,
+      failed: qcOutcomeCounts.failed,
+      pending: qcOutcomeCounts.pending,
+      rework: qcOutcomeCounts.rework,
+    },
+    availableInventory: {
+      inStock: rollCounts.inStock,
+      reserved: rollCounts.reserved,
+      availableForSale: rollCounts.inStock,
+      warehouseStock: rollCounts.inStock + rollCounts.reserved,
+    },
+    salesSummary: {
+      totalOrders: salesCounts.total,
+      pendingOrders: salesCounts.pending,
+      deliveredOrders: salesCounts.delivered,
+      totalRevenue: salesCounts.totalRevenue,
+      deliveredRevenue: salesCounts.deliveredRevenue,
+    },
   }));
 });
 
-router.get("/dashboard/roll-status-breakdown", requireAuth, async (req, res): Promise<void> => {
+router.get(
+  "/dashboard/roll-status-breakdown",
+  requireAuth,
+  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;
 
   const results = await db.select({
@@ -74,7 +117,12 @@ router.get("/dashboard/roll-status-breakdown", requireAuth, async (req, res): Pr
   res.json(GetRollStatusBreakdownResponse.parse(results.map(r => ({ status: r.status, count: r.count }))));
 });
 
-router.get("/dashboard/recent-activity", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get(
+  "/dashboard/recent-activity",
+  requireAuth,
+  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  checkPlanAccess("pro"),
+  async (req, res): Promise<void> => {
   const params = GetRecentActivityQueryParams.safeParse(req.query);
   const tenantId = req.user!.tenantId;
   const limit = params.success ? (params.data.limit ?? 20) : 20;
@@ -108,7 +156,12 @@ router.get("/dashboard/recent-activity", requireAuth, checkPlanAccess("pro"), as
   res.json(GetRecentActivityResponse.parse(activities));
 });
 
-router.get("/dashboard/production-by-month", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get(
+  "/dashboard/production-by-month",
+  requireAuth,
+  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  checkPlanAccess("pro"),
+  async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -124,7 +177,7 @@ router.get("/dashboard/production-by-month", requireAuth, checkPlanAccess("pro")
   res.json(GetProductionByMonthResponse.parse(results.map(r => ({ month: r.month, count: r.count }))));
 });
 
-router.get("/audit-logs", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/audit-logs", requireAuth, requireTenantAdmin, checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = ListAuditLogsQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

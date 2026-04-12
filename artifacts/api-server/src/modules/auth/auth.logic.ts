@@ -29,7 +29,7 @@ export function buildTenantAdminValues(input: {
     email: input.email,
     passwordHash: input.passwordHash,
     fullName: input.fullName,
-    role: "admin",
+    role: "tenant_admin",
     isActive: true,
   };
 }

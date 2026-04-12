@@ -13,6 +13,7 @@ import billingRouter from "./billing";
 import adminTenantsRouter from "./admin-tenants";
 import settingsPaymentMethodsRouter from "./settings-payment-methods";
 import plansRouter from "../modules/plans/plans.routes";
+import operationalSearchRouter from "../modules/search/operational-search.routes";
 
 const router: IRouter = Router();
 
@@ -25,6 +26,7 @@ router.use(qcReportsRouter);
 router.use(dyeingOrdersRouter);
 router.use(warehousesRouter);
 router.use(salesRouter);
+router.use(operationalSearchRouter);
 router.use(dashboardRouter);
 router.use(billingRouter);
 router.use(plansRouter);

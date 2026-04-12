@@ -29,7 +29,50 @@ export interface BillingSubscription {
   /** @nullable */
   lastInvoiceStatus: string | null;
   isActive: boolean;
+  statusSummary: {
+    state:
+      | "active"
+      | "trialing"
+      | "scheduled_cancel"
+      | "past_due"
+      | "unpaid"
+      | "incomplete"
+      | "canceled";
+    severity: "success" | "info" | "warning" | "danger";
+    hasAccess: boolean;
+    needsAttention: boolean;
+    isEndingSoon: boolean;
+    nextRelevantAt: string | null;
+    nextRelevantType: "trial_end" | "renewal" | "cancellation" | null;
+    lastInvoiceStatus: string | null;
+  };
   usage: BillingUsage;
   limits: BillingLimits;
   plans: BillingPlanDetails[];
+  manualPayment: {
+    amount: number;
+    amountUsd: number;
+    localAmountEgp: number;
+    baseCurrency: "USD" | "EGP";
+    localCurrency: "EGP";
+    usdExchangeRate: number;
+    interval: "monthly" | "yearly";
+    instructions: {
+      currency: string;
+      instapay: {
+        account: string;
+        note: string;
+      };
+      vodafoneCash: {
+        number: string;
+        note: string;
+      };
+    };
+    methods: Array<{
+      method: "instapay" | "vodafone_cash";
+      accountNumber: string;
+      accountName: string;
+      instructionsAr: string;
+    }>;
+  };
 }

@@ -16,8 +16,29 @@ export interface DashboardStats {
   inStock: number;
   reserved: number;
   sold: number;
+  activeRolls: number;
   activeProductionOrders: number;
   activeDyeingOrders: number;
   pendingSalesOrders: number;
   totalCustomers: number;
+  qcOutcomes: {
+    total: number;
+    passed: number;
+    failed: number;
+    pending: number;
+    rework: number;
+  };
+  availableInventory: {
+    inStock: number;
+    reserved: number;
+    availableForSale: number;
+    warehouseStock: number;
+  };
+  salesSummary: {
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    totalRevenue: number;
+    deliveredRevenue: number;
+  };
 }

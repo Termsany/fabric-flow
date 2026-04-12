@@ -63,6 +63,16 @@ export interface SubscriptionRecord {
   trialEndsAt: string | null;
   canceledAt: string | null;
   metadata: Record<string, unknown>;
+  statusSummary: {
+    state: "active" | "trialing" | "scheduled_cancel" | "past_due" | "unpaid" | "incomplete" | "canceled";
+    severity: "success" | "info" | "warning" | "danger";
+    hasAccess: boolean;
+    needsAttention: boolean;
+    isEndingSoon: boolean;
+    nextRelevantAt: string | null;
+    nextRelevantType: "trial_end" | "renewal" | "cancellation" | null;
+    lastInvoiceStatus: string | null;
+  };
   plan: PlanRecord;
 }
 

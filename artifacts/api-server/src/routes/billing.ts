@@ -39,6 +39,8 @@ import { logger } from "../lib/logger";
 import { getPaymentProof, savePaymentProof } from "../lib/object-storage";
 import { generatePaymentQr } from "../lib/payment-qr";
 import { paymentMethodsService } from "../modules/payment-methods/payment-methods.service";
+import { buildSubscriptionStatusSummary } from "../lib/subscription-state";
+import { GetBillingSubscriptionResponse } from "@workspace/api-zod";
 
 const router = Router();
 
@@ -329,7 +331,7 @@ async function getExpectedManualPaymentAmount(tenantId: number, tenant: { curren
   return subscriptionPayment.baseCurrency === "USD" ? convertUsdToEgp(baseAmount) : baseAmount;
 }
 
-router.get("/billing/subscription", requireAuth, async (req, res): Promise<void> => {
+router.get("/billing/subscription", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
   const tenant = await getTenantBilling(req.user!.tenantId);
   if (!tenant) {
     res.status(404).json({ error: "Tenant not found" });
@@ -351,7 +353,16 @@ router.get("/billing/subscription", requireAuth, async (req, res): Promise<void>
     accountName: method.account_name,
     instructionsAr: method.instructions_ar,
   }));
-  res.json(snapshot);
+  res.json(GetBillingSubscriptionResponse.parse({
+    ...snapshot,
+    statusSummary: buildSubscriptionStatusSummary({
+      billingStatus: snapshot.billingStatus,
+      lastInvoiceStatus: snapshot.lastInvoiceStatus,
+      isActive: snapshot.isActive,
+      subscriptionEndsAt: tenant.subscriptionEndsAt,
+      trialEndsAt: tenant.trialEndsAt,
+    }),
+  }));
 });
 
 router.get("/billing/payment-methods", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
@@ -490,7 +501,7 @@ router.post("/billing/pay", requireAuth, requireTenantAdmin, upload.single("proo
   });
 });
 
-router.get("/billing/payments", requireAuth, async (req, res): Promise<void> => {
+router.get("/billing/payments", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
   const rows = await db.select({
     id: paymentsTable.id,
     amount: paymentsTable.amount,
@@ -519,7 +530,7 @@ router.get("/billing/payments", requireAuth, async (req, res): Promise<void> => 
   })));
 });
 
-router.get("/billing/invoices", requireAuth, async (req, res): Promise<void> => {
+router.get("/billing/invoices", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
   const rows = await db.select({
     id: invoicesTable.id,
     invoiceNumber: invoicesTable.invoiceNumber,

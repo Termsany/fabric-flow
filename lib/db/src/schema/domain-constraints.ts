@@ -1,6 +1,19 @@
 import { z } from "zod/v4";
 
-export const USER_ROLES = ["admin", "production", "qc", "warehouse", "sales"] as const;
+export const USER_ROLES = [
+  "tenant_admin",
+  "production_user",
+  "dyeing_user",
+  "qc_user",
+  "warehouse_user",
+  "sales_user",
+  // Legacy role values kept for compatibility.
+  "admin",
+  "production",
+  "qc",
+  "warehouse",
+  "sales",
+] as const;
 export const PLATFORM_ADMIN_ROLES = ["super_admin", "support_admin", "billing_admin", "security_admin", "readonly_admin"] as const;
 export const BILLING_STATUSES = ["trialing", "active", "past_due", "unpaid", "incomplete", "canceled"] as const;
 export const SUBSCRIPTION_INTERVALS = ["monthly", "yearly"] as const;
@@ -24,7 +37,7 @@ export const FABRIC_ROLL_STATUSES = [
   "RESERVED",
   "SOLD",
 ] as const;
-export const QC_RESULTS = ["PASS", "FAIL", "SECOND"] as const;
+export const QC_RESULTS = ["PASS", "FAIL", "PENDING", "REWORK"] as const;
 export const INVOICE_STATUSES = ["ISSUED", "PAID", "OVERDUE", "VOID"] as const;
 
 export const userRoleSchema = z.enum(USER_ROLES);

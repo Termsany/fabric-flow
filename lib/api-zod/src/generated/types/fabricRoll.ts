@@ -14,6 +14,8 @@ export interface FabricRoll {
   productionOrderId: number;
   /** @nullable */
   warehouseId?: number | null;
+  /** @nullable */
+  warehouseLocationId?: number | null;
   length: number;
   weight: number;
   color: string;
@@ -24,6 +26,63 @@ export interface FabricRoll {
   qrCode: string;
   /** @nullable */
   notes?: string | null;
+  workflow?: {
+    currentStatus: string;
+    currentStage: string;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
+  traceability?: {
+    productionOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+    } | null;
+    currentWarehouse?: {
+      id: number;
+      name: string;
+      location: string;
+    } | null;
+    latestQc?: {
+      id: number;
+      result: string;
+      defectCount: number;
+      inspectedAt: string;
+      notes?: string | null;
+    } | null;
+    latestMovement?: {
+      id: number;
+      fromWarehouseId?: number | null;
+      toWarehouseId?: number | null;
+      movedAt: string;
+      reason?: string | null;
+    } | null;
+    latestDyeingOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      targetColor: string;
+    } | null;
+    latestSalesOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      customerId: number;
+    } | null;
+  };
+  timeline?: {
+    occurredAt: string;
+    type: string;
+    title: string;
+    description?: string | null;
+    status?: string | null;
+    entityType: string;
+    entityId: number;
+    metadata?: Record<string, unknown>;
+  }[];
   createdAt: string;
   updatedAt: string;
 }

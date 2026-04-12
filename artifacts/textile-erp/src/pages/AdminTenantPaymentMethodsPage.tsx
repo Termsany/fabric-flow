@@ -7,17 +7,20 @@ import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
 import { ConfirmDialog } from "@/components/payment-methods/ConfirmDialog";
 import { PaymentMethodFormModal } from "@/components/payment-methods/PaymentMethodFormModal";
 import { useLang } from "@/contexts/LangContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useAdminTenantPaymentMethods, useUpdateAdminTenantPaymentMethod } from "@/hooks/use-payment-methods";
 import { getAdminTenantDetails } from "@/lib/admin-tenants";
 import type { TenantPaymentMethodRecord } from "@/lib/payment-methods";
 import { formatDateTime } from "@/lib/format";
 import { toast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { hasPlatformAdminPermission } from "@/lib/roles";
 
 export function AdminTenantPaymentMethodsPage() {
   const [, params] = useRoute("/admin/tenants/:id/payment-methods");
   const tenantId = Number(params?.id);
   const { t, lang } = useLang();
+  const { user } = useAuth();
   const tenantQuery = useQuery({
     queryKey: ["admin-tenant-header", tenantId],
     queryFn: () => getAdminTenantDetails(tenantId),
@@ -27,6 +30,7 @@ export function AdminTenantPaymentMethodsPage() {
   const updateMutation = useUpdateAdminTenantPaymentMethod(tenantId);
   const [editing, setEditing] = useState<TenantPaymentMethodRecord | null>(null);
   const [confirming, setConfirming] = useState<TenantPaymentMethodRecord | null>(null);
+  const canManageTenantPaymentMethods = hasPlatformAdminPermission(user?.role, "tenant_payment_methods.manage_any");
 
   const labels = useMemo(() => ({
     globallyEnabled: t.globallyEnabled,
@@ -103,17 +107,21 @@ export function AdminTenantPaymentMethodsPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={updateMutation.isPending || (!method.is_globally_enabled && !method.is_active)}
-                  onClick={() => setConfirming(method)}
-                  className={`rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${method.is_active ? "bg-rose-600" : "bg-emerald-600"}`}
-                >
-                  {method.is_active ? t.deactivate : t.activate}
-                </button>
-                <button type="button" onClick={() => setEditing(method)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">
-                  {t.edit}
-                </button>
+                {canManageTenantPaymentMethods ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={updateMutation.isPending || (!method.is_globally_enabled && !method.is_active)}
+                      onClick={() => setConfirming(method)}
+                      className={`rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${method.is_active ? "bg-rose-600" : "bg-emerald-600"}`}
+                    >
+                      {method.is_active ? t.deactivate : t.activate}
+                    </button>
+                    <button type="button" onClick={() => setEditing(method)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+                      {t.edit}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           ))}
@@ -121,7 +129,7 @@ export function AdminTenantPaymentMethodsPage() {
       )}
 
       <PaymentMethodFormModal
-        open={Boolean(editing)}
+        open={canManageTenantPaymentMethods && Boolean(editing)}
         mode="tenant"
         title={t.editTenantPaymentMethod}
         saveLabel={t.saveChanges}
@@ -150,7 +158,7 @@ export function AdminTenantPaymentMethodsPage() {
       />
 
       <ConfirmDialog
-        open={Boolean(confirming)}
+        open={canManageTenantPaymentMethods && Boolean(confirming)}
         title={confirming?.is_active ? t.deactivate : t.activate}
         description={confirming?.is_active ? t.disablePaymentMethodConfirm : t.enablePaymentMethodConfirm}
         confirmLabel={confirming?.is_active ? t.deactivate : t.activate}

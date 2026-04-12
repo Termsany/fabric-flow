@@ -3,10 +3,12 @@ import { db, planFeaturesTable, planPricesTable, plansTable, tenantSubscriptions
 import { eq } from "drizzle-orm";
 import { createValidationError, AppError } from "../../utils/errors";
 import { normalizeStatus, type BillingPlan, type BillingStatus } from "../../lib/billing";
+import { isTenantRole } from "../../lib/auth";
 import { writeAdminAuditLog } from "../../lib/auth";
 import { paymentMethodsService } from "../payment-methods/payment-methods.service";
 import { plansRepository } from "./plans.repository";
 import type { PlanDto, TenantSubscriptionDto, SubscriptionStatus } from "./plans.types";
+import { buildSubscriptionStatusSummary } from "../../lib/subscription-state";
 
 type PlanUpsertInput = {
   code: string;
@@ -296,6 +298,14 @@ export class PlansService {
       trialEndsAt: current.trialEndsAt?.toISOString() ?? null,
       canceledAt: current.canceledAt?.toISOString() ?? null,
       metadata: (current.metadata as Record<string, unknown> | null) ?? {},
+      statusSummary: buildSubscriptionStatusSummary({
+        billingStatus: normalizeStatus(current.status),
+        lastInvoiceStatus: null,
+        cancelAtPeriodEnd: current.cancelAtPeriodEnd,
+        currentPeriodEnd: current.currentPeriodEnd,
+        subscriptionEndsAt: current.currentPeriodEnd,
+        trialEndsAt: current.trialEndsAt,
+      }),
       plan: mapPlan(plan, prices, features, 1),
     };
   }
@@ -356,7 +366,7 @@ export class PlansService {
         toPlanId: plan.id,
         fromStatus: existing.status,
         toStatus: nextStatus,
-        actorUserId: req.user?.role === "admin" ? req.user.userId : null,
+        actorUserId: req.user && isTenantRole(req.user.role) ? req.user.userId : null,
         actorPlatformAdminId: req.user && req.user.tenantId === 0 && req.user.userId > 0 ? req.user.userId : null,
         notes: notes ?? null,
         metadata: { interval, paymentMethodCode: paymentMethodCode ?? null },
@@ -401,7 +411,7 @@ export class PlansService {
         toPlanId: existing.planId,
         fromStatus: existing.status,
         toStatus: "canceled",
-        actorUserId: req.user?.role === "admin" ? req.user.userId : null,
+        actorUserId: req.user && isTenantRole(req.user.role) ? req.user.userId : null,
         actorPlatformAdminId: req.user && req.user.tenantId === 0 && req.user.userId > 0 ? req.user.userId : null,
         notes: notes ?? null,
         metadata: { cancelAtPeriodEnd },
@@ -520,7 +530,7 @@ export class PlansService {
           toPlanId: subscription.planId,
           fromStatus: subscription.status,
           toStatus: subscription.status,
-          actorUserId: req.user?.role === "admin" ? req.user.userId : null,
+          actorUserId: req.user && isTenantRole(req.user.role) ? req.user.userId : null,
           actorPlatformAdminId: req.user && req.user.tenantId === 0 && req.user.userId > 0 ? req.user.userId : null,
           notes: null,
           metadata: {

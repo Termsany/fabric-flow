@@ -1,4 +1,7 @@
 import { formatMovement, type WarehousesServiceDependencies } from "./warehouses.types";
+import { validateWarehouseMovementReadiness } from "./warehouses.workflow";
+import { buildAuditChanges } from "../../utils/audit-log";
+import { FABRIC_ROLL_WORKFLOW_STATUS } from "@workspace/api-zod";
 
 export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependencies) {
   const { warehousesRepository } = deps;
@@ -6,11 +9,12 @@ export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependen
   return {
     async listWarehouseMovements(
       tenantId: number,
-      params: { fabricRollId?: number; warehouseId?: number; limit?: number; offset?: number },
+      params: { fabricRollId?: number; warehouseId?: number; search?: string; limit?: number; offset?: number },
     ) {
       const movements = await warehousesRepository.listWarehouseMovements(tenantId, {
         fabricRollId: params.fabricRollId,
         warehouseId: params.warehouseId,
+        search: params.search,
         limit: params.limit ?? 100,
         offset: params.offset ?? 0,
       });
@@ -31,6 +35,11 @@ export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependen
       const [roll] = await warehousesRepository.findFabricRollById(tenantId, data.fabricRollId);
       if (!roll) {
         return { error: "Fabric roll not found" as const, status: 404 as const };
+      }
+
+      const readinessError = validateWarehouseMovementReadiness(roll, data.fromWarehouseId);
+      if (readinessError) {
+        return readinessError;
       }
 
       if (data.fromWarehouseId) {
@@ -62,10 +71,23 @@ export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependen
         entityType: "warehouse_movement",
         entityId: movement.id,
         action: "CREATE",
-        changes: JSON.stringify({
-          fabricRollId: data.fabricRollId,
-          fromWarehouseId: data.fromWarehouseId,
-          toWarehouseId: data.toWarehouseId,
+        changes: buildAuditChanges({
+          before: {
+            fabricRollId: data.fabricRollId,
+            warehouseId: roll.warehouseId ?? null,
+            status: roll.status,
+          },
+          after: {
+            fabricRollId: data.fabricRollId,
+            warehouseId: data.toWarehouseId,
+            status: FABRIC_ROLL_WORKFLOW_STATUS.inStock,
+          },
+          context: {
+            movementType: movement.fromWarehouseId == null ? "inbound" : "transfer",
+            fromWarehouseId: data.fromWarehouseId ?? null,
+            toWarehouseId: data.toWarehouseId,
+            reason: data.reason ?? null,
+          },
         }),
       });
 

@@ -1,5 +1,6 @@
 import { db, auditLogsTable, customersTable, fabricRollsTable, salesOrdersTable } from "@workspace/db";
-import { and, desc, eq, ilike, inArray } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { normalizeIdentifierSearch } from "../../utils/identifiers";
 
 export const salesRepository = {
   listCustomers(tenantId: number, options: { search?: string; limit: number; offset: number }) {
@@ -31,13 +32,25 @@ export const salesRepository = {
     ).returning();
   },
 
-  listSalesOrders(tenantId: number, options: { status?: string; customerId?: number; limit: number; offset: number }) {
+  listSalesOrders(tenantId: number, options: { status?: string; customerId?: number; search?: string; limit: number; offset: number }) {
     const conditions = [eq(salesOrdersTable.tenantId, tenantId)];
     if (options.status) {
       conditions.push(eq(salesOrdersTable.status, options.status as typeof salesOrdersTable.$inferSelect.status));
     }
     if (options.customerId) {
       conditions.push(eq(salesOrdersTable.customerId, options.customerId));
+    }
+    const identifierSearch = normalizeIdentifierSearch(options.search);
+    if (identifierSearch) {
+      const searchConditions = [
+        ilike(salesOrdersTable.orderNumber, identifierSearch.pattern),
+        ilike(salesOrdersTable.invoiceNumber, identifierSearch.pattern),
+      ];
+      if (identifierSearch.numericId != null) {
+        searchConditions.push(eq(salesOrdersTable.id, identifierSearch.numericId));
+        searchConditions.push(eq(salesOrdersTable.customerId, identifierSearch.numericId));
+      }
+      conditions.push(or(...searchConditions)!);
     }
 
     return db.select().from(salesOrdersTable)
@@ -48,7 +61,11 @@ export const salesRepository = {
   },
 
   findTenantRollIds(tenantId: number, rollIds: number[]) {
-    return db.select({ id: fabricRollsTable.id }).from(fabricRollsTable).where(
+    return db.select({
+      id: fabricRollsTable.id,
+      status: fabricRollsTable.status,
+      warehouseId: fabricRollsTable.warehouseId,
+    }).from(fabricRollsTable).where(
       and(inArray(fabricRollsTable.id, rollIds), eq(fabricRollsTable.tenantId, tenantId)),
     );
   },
@@ -76,5 +93,32 @@ export const salesRepository = {
     return db.update(salesOrdersTable).set(updates).where(
       and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.tenantId, tenantId)),
     ).returning();
+  },
+
+  getSalesReportTotals(tenantId: number) {
+    return db.select({
+      totalSalesCount: count(),
+      deliveredSalesCount: sql<number>`count(*) filter (where ${salesOrdersTable.status} = 'DELIVERED')`.mapWith(Number),
+      pendingSalesCount: sql<number>`count(*) filter (where ${salesOrdersTable.status} in ('DRAFT', 'CONFIRMED'))`.mapWith(Number),
+      recordedTotalAmount: sql<number>`coalesce(sum(${salesOrdersTable.totalAmount}), 0)`.mapWith(Number),
+      totalRollsAllocated: sql<number>`coalesce(sum(cardinality(${salesOrdersTable.rollIds})), 0)`.mapWith(Number),
+      deliveredRolls: sql<number>`coalesce(sum(cardinality(${salesOrdersTable.rollIds})) filter (where ${salesOrdersTable.status} = 'DELIVERED'), 0)`.mapWith(Number),
+    }).from(salesOrdersTable).where(eq(salesOrdersTable.tenantId, tenantId));
+  },
+
+  listSalesStatusCounts(tenantId: number) {
+    return db.select({
+      status: salesOrdersTable.status,
+      count: count(),
+    }).from(salesOrdersTable)
+      .where(eq(salesOrdersTable.tenantId, tenantId))
+      .groupBy(salesOrdersTable.status);
+  },
+
+  listRecentSales(tenantId: number, limit: number) {
+    return db.select().from(salesOrdersTable)
+      .where(eq(salesOrdersTable.tenantId, tenantId))
+      .orderBy(desc(salesOrdersTable.createdAt))
+      .limit(limit);
   },
 };

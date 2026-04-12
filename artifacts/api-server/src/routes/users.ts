@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { requireAuth, isSuperAdminRole, isTenantAdminRole } from "../lib/auth";
+import { requireAuth, isSuperAdminRole, requireTenantAdmin, isTenantAdminRole, normalizeTenantRole } from "../lib/auth";
 import { hashPassword } from "../lib/auth";
 import { writeAdminAuditLog } from "../lib/auth";
 import { z } from "zod";
@@ -29,7 +29,7 @@ function isStrongPassword(password: string): boolean {
     && /\d/.test(password);
 }
 
-router.get("/users", requireAuth, async (req, res): Promise<void> => {
+router.get("/users", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
   const users = await db.select().from(usersTable).where(eq(usersTable.tenantId, req.user!.tenantId));
   res.json(ListUsersResponse.parse(users.map(u => ({
     id: u.id,
@@ -45,7 +45,7 @@ router.get("/users", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/users", requireAuth, checkSubscription(), async (req, res): Promise<void> => {
   if (!isTenantAdminRole(req.user!.role)) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Tenant admin access required" });
     return;
   }
   const parsed = CreateUserBody.safeParse(req.body);
@@ -70,7 +70,12 @@ router.post("/users", requireAuth, checkSubscription(), async (req, res): Promis
     return;
   }
 
-  const { email, password, fullName, role } = parsed.data;
+  const normalizedRole = normalizeTenantRole(parsed.data.role);
+  if (!normalizedRole) {
+    res.status(400).json({ error: "Invalid role" });
+    return;
+  }
+  const { email, password, fullName } = parsed.data;
   const passwordHash = await hashPassword(password);
 
   const [user] = await db.insert(usersTable).values({
@@ -78,7 +83,7 @@ router.post("/users", requireAuth, checkSubscription(), async (req, res): Promis
     email,
     passwordHash,
     fullName,
-    role,
+    role: normalizedRole,
     isActive: true,
   }).returning();
 
@@ -94,7 +99,7 @@ router.post("/users", requireAuth, checkSubscription(), async (req, res): Promis
   });
 });
 
-router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
+router.get("/users/:id", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
   const params = GetUserParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -124,7 +129,7 @@ router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
 
 router.patch("/users/:id", requireAuth, async (req, res): Promise<void> => {
   if (!isTenantAdminRole(req.user!.role)) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Tenant admin access required" });
     return;
   }
 
@@ -141,7 +146,14 @@ router.patch("/users/:id", requireAuth, async (req, res): Promise<void> => {
 
   const updates: Record<string, unknown> = {};
   if (parsed.data.fullName != null) updates.fullName = parsed.data.fullName;
-  if (parsed.data.role != null) updates.role = parsed.data.role;
+  if (parsed.data.role != null) {
+    const normalizedRole = normalizeTenantRole(parsed.data.role);
+    if (!normalizedRole) {
+      res.status(400).json({ error: "Invalid role" });
+      return;
+    }
+    updates.role = normalizedRole;
+  }
   if (parsed.data.isActive != null) updates.isActive = parsed.data.isActive;
   if (parsed.data.password) updates.passwordHash = await hashPassword(parsed.data.password);
 
@@ -168,7 +180,7 @@ router.patch("/users/:id", requireAuth, async (req, res): Promise<void> => {
 
 router.delete("/users/:id", requireAuth, async (req, res): Promise<void> => {
   if (!isTenantAdminRole(req.user!.role)) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Tenant admin access required" });
     return;
   }
   const params = DeleteUserParams.safeParse(req.params);
@@ -191,7 +203,7 @@ router.delete("/users/:id", requireAuth, async (req, res): Promise<void> => {
 
 router.patch("/admin/users/:id/password", requireAuth, async (req, res): Promise<void> => {
   if (!isTenantAdminRole(req.user!.role)) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Tenant admin access required" });
     return;
   }
 

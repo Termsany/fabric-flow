@@ -8,6 +8,7 @@
 
 export type ListProductionOrdersParams = {
   status?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 };

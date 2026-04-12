@@ -1,5 +1,9 @@
 import { customersTable, salesOrdersTable } from "@workspace/db";
+import { FABRIC_ROLL_WORKFLOW_STATUS, SALES_WORKFLOW_STATUS, WORKFLOW_DEFAULTS } from "@workspace/api-zod";
 import { salesRepository } from "./sales.repository";
+import { buildSalesStockSources, validateDeliverableRolls, validateSellableRolls } from "./sales.inventory";
+import { buildAuditChanges, pickAuditFields } from "../../utils/audit-log";
+import { buildSalesReport, type SalesReportTotals, type SalesStatusCount } from "./sales.reporting";
 
 function formatCustomer(c: typeof customersTable.$inferSelect) {
   return {
@@ -32,19 +36,32 @@ function formatSalesOrder(o: typeof salesOrdersTable.$inferSelect) {
   };
 }
 
+function formatSalesOrderWithStockSources(
+  order: typeof salesOrdersTable.$inferSelect,
+  stockSources: Array<{ fabricRollId: number; warehouseId: number | null }>,
+) {
+  return {
+    ...formatSalesOrder(order),
+    stockSources,
+  };
+}
+
 export type SalesServiceDependencies = {
   salesRepository: {
     listCustomers: (tenantId: number, options: { search?: string; limit: number; offset: number }) => Promise<Array<typeof customersTable.$inferSelect>>;
     createCustomer: (values: typeof customersTable.$inferInsert) => Promise<Array<typeof customersTable.$inferSelect>>;
     findCustomerById: (tenantId: number, id: number) => Promise<Array<typeof customersTable.$inferSelect>>;
     updateCustomer: (tenantId: number, id: number, updates: Record<string, unknown>) => Promise<Array<typeof customersTable.$inferSelect>>;
-    listSalesOrders: (tenantId: number, options: { status?: string; customerId?: number; limit: number; offset: number }) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
-    findTenantRollIds: (tenantId: number, rollIds: number[]) => Promise<Array<{ id: number }>>;
+    listSalesOrders: (tenantId: number, options: { status?: string; customerId?: number; search?: string; limit: number; offset: number }) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
+    findTenantRollIds: (tenantId: number, rollIds: number[]) => Promise<Array<{ id: number; status: string; warehouseId: number | null }>>;
     createSalesOrder: (values: typeof salesOrdersTable.$inferInsert) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
     updateRollStatusForTenant: (tenantId: number, rollIds: number[], status: string | undefined) => Promise<unknown>;
     insertAuditLog: (values: unknown) => Promise<unknown>;
     findSalesOrderById: (tenantId: number, id: number) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
     updateSalesOrder: (tenantId: number, id: number, updates: Record<string, unknown>) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
+    getSalesReportTotals: (tenantId: number) => Promise<SalesReportTotals[]>;
+    listSalesStatusCounts: (tenantId: number) => Promise<SalesStatusCount[]>;
+    listRecentSales: (tenantId: number, limit: number) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
   };
 };
 
@@ -107,15 +124,38 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
     return customer ? formatCustomer(customer) : null;
   },
 
-  async listSalesOrders(tenantId: number, params: { status?: string; customerId?: number; limit?: number; offset?: number }) {
+  async listSalesOrders(tenantId: number, params: { status?: string; customerId?: number; search?: string; limit?: number; offset?: number }) {
     const orders = await salesRepository.listSalesOrders(tenantId, {
       status: params.status,
       customerId: params.customerId,
+      search: params.search,
       limit: params.limit ?? 100,
       offset: params.offset ?? 0,
     });
 
     return orders.map(formatSalesOrder);
+  },
+
+  async getSalesReport(tenantId: number, params: { recentLimit?: number } = {}) {
+    const recentLimit = Math.min(Math.max(params.recentLimit ?? 5, 1), 20);
+    const [[totals], statusCounts, recentSales] = await Promise.all([
+      salesRepository.getSalesReportTotals(tenantId),
+      salesRepository.listSalesStatusCounts(tenantId),
+      salesRepository.listRecentSales(tenantId, recentLimit),
+    ]);
+
+    return buildSalesReport({
+      totals: totals ?? {
+        totalSalesCount: 0,
+        deliveredSalesCount: 0,
+        pendingSalesCount: 0,
+        recordedTotalAmount: 0,
+        totalRollsAllocated: 0,
+        deliveredRolls: 0,
+      },
+      statusCounts,
+      recentSales,
+    });
   },
 
   async createSalesOrder(tenantId: number, userId: number, data: {
@@ -131,18 +171,22 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
     }
 
     const rollIds = data.rollIds ?? [];
+    let stockSources: Array<{ fabricRollId: number; warehouseId: number | null }> = [];
     if (rollIds.length > 0) {
       const tenantRolls = await salesRepository.findTenantRollIds(tenantId, rollIds);
-      if (tenantRolls.length !== rollIds.length) {
-        return { error: "One or more selected rolls do not belong to this tenant" as const, status: 400 as const };
+      const availabilityError = validateSellableRolls(rollIds, tenantRolls);
+      if (availabilityError) {
+        return availabilityError;
       }
+
+      stockSources = buildSalesStockSources(tenantRolls);
     }
 
     const [order] = await salesRepository.createSalesOrder({
       tenantId,
       orderNumber,
       customerId: data.customerId,
-      status: "DRAFT",
+      status: WORKFLOW_DEFAULTS.salesOrderStatus,
       totalAmount: data.totalAmount ?? 0,
       rollIds,
       notes: data.notes ?? null,
@@ -150,7 +194,7 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
     });
 
     if (rollIds.length > 0) {
-      await salesRepository.updateRollStatusForTenant(tenantId, rollIds, "RESERVED");
+      await salesRepository.updateRollStatusForTenant(tenantId, rollIds, FABRIC_ROLL_WORKFLOW_STATUS.reserved);
     }
 
     await salesRepository.insertAuditLog({
@@ -159,10 +203,23 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
       entityType: "sales_order",
       entityId: order.id,
       action: "CREATE",
-      changes: JSON.stringify({ orderNumber, totalAmount: data.totalAmount ?? 0 }),
+      changes: buildAuditChanges({
+        before: null,
+        after: {
+          status: order.status,
+          totalAmount: data.totalAmount ?? 0,
+          rollIds,
+        },
+        context: {
+          orderNumber,
+          customerId: data.customerId,
+          stockSources,
+          reservedRollIds: rollIds,
+        },
+      }),
     });
 
-    return { data: formatSalesOrder(order) };
+    return { data: formatSalesOrderWithStockSources(order, stockSources) };
   },
 
   async getSalesOrder(tenantId: number, id: number) {
@@ -175,7 +232,7 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
     totalAmount?: number;
     notes?: string | null;
     invoiceNumber?: string | null;
-  }) {
+  }, userId: number | null = null) {
     const [existing] = await salesRepository.findSalesOrderById(tenantId, id);
     if (!existing) {
       return { error: "Sales order not found" as const };
@@ -187,11 +244,42 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
     if (data.notes != null) updates.notes = data.notes;
     if (data.invoiceNumber != null) updates.invoiceNumber = data.invoiceNumber;
 
+    const shouldMarkRollsSold = data.status === SALES_WORKFLOW_STATUS.delivered && existing.rollIds && existing.rollIds.length > 0;
+    let deliveryStockSources: Array<{ fabricRollId: number; warehouseId: number | null }> = [];
+    if (shouldMarkRollsSold) {
+      const tenantRolls = await salesRepository.findTenantRollIds(tenantId, existing.rollIds);
+      const deliveryError = validateDeliverableRolls(existing.rollIds, tenantRolls);
+      if (deliveryError) {
+        return deliveryError;
+      }
+
+      deliveryStockSources = buildSalesStockSources(tenantRolls);
+    }
+
     const [order] = await salesRepository.updateSalesOrder(tenantId, id, updates);
 
-    if (data.status === "DELIVERED" && existing.rollIds && existing.rollIds.length > 0) {
-      await salesRepository.updateRollStatusForTenant(tenantId, existing.rollIds, "SOLD");
+    if (shouldMarkRollsSold) {
+      await salesRepository.updateRollStatusForTenant(tenantId, existing.rollIds, FABRIC_ROLL_WORKFLOW_STATUS.sold);
     }
+
+    await salesRepository.insertAuditLog({
+      tenantId,
+      userId,
+      entityType: "sales_order",
+      entityId: order.id,
+      action: shouldMarkRollsSold ? "SALES_FINALIZED" : data.status != null && data.status !== existing.status ? "SALES_STATUS_CHANGED" : "UPDATE",
+      changes: buildAuditChanges({
+        before: pickAuditFields(existing, ["status", "totalAmount", "notes", "invoiceNumber"]),
+        after: pickAuditFields(order, ["status", "totalAmount", "notes", "invoiceNumber"]),
+        context: {
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          rollIds: order.rollIds ?? [],
+          stockSources: deliveryStockSources,
+          affectedRollStatus: shouldMarkRollsSold ? FABRIC_ROLL_WORKFLOW_STATUS.sold : null,
+        },
+      }),
+    });
 
     return { data: formatSalesOrder(order) };
   },

@@ -1,22 +1,40 @@
 import { Router } from "express";
 import { db, qcReportsTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
-import { requireAuth } from "../lib/auth";
+import { getFabricRollStatusFromQcResult } from "@workspace/api-zod";
+import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
+import { requireAuth, requireTenantRole } from "../lib/auth";
 import { checkPlanAccess } from "../lib/billing";
+import { formatValidationError } from "../lib/request-validation";
 import {
   ListQcReportsQueryParams,
   ListQcReportsResponse,
-  CreateQcReportBody,
+  GetQcReportSummaryQueryParams,
+  GetQcReportSummaryResponse,
   GetQcReportParams,
   GetQcReportResponse,
   UpdateQcReportParams,
-  UpdateQcReportBody,
   UpdateQcReportResponse,
 } from "@workspace/api-zod";
+import {
+  parseCreateQcReportBody,
+  parseUpdateQcReportBody,
+} from "./operational-workflow.validation";
+import {
+  assertRollCanReceiveQc,
+  buildQcDecision,
+  QcWorkflowError,
+} from "./qc-reports.workflow";
+import { buildAuditChanges, pickAuditFields } from "../utils/audit-log";
+import { buildQcReportSummary } from "./qc-reports.reporting";
 
 const router = Router();
 
-function formatReport(r: typeof qcReportsTable.$inferSelect) {
+function formatReport(
+  r: typeof qcReportsTable.$inferSelect,
+  roll?: typeof fabricRollsTable.$inferSelect,
+) {
+  const decision = buildQcDecision(r.result);
+
   return {
     id: r.id,
     tenantId: r.tenantId,
@@ -28,15 +46,45 @@ function formatReport(r: typeof qcReportsTable.$inferSelect) {
     images: r.images ?? [],
     notes: r.notes ?? null,
     inspectedAt: r.inspectedAt.toISOString(),
+    workflow: decision,
+    traceability: roll ? {
+      fabricRoll: {
+        id: roll.id,
+        rollCode: roll.rollCode,
+        status: roll.status,
+        productionOrderId: roll.productionOrderId,
+      },
+    } : undefined,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
 }
 
-router.get("/qc-reports", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+function respondQcWorkflowError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof QcWorkflowError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
+
+function parseOptionalDate(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+router.get("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = ListQcReportsQueryParams.safeParse(req.query);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    res.status(400).json({ error: formatValidationError(params.error) });
     return;
   }
 
@@ -50,57 +98,118 @@ router.get("/qc-reports", requireAuth, checkPlanAccess("pro"), async (req, res):
     .limit(params.data.limit ?? 100)
     .offset(params.data.offset ?? 0);
 
-  res.json(ListQcReportsResponse.parse(reports.map(formatReport)));
+  res.json(ListQcReportsResponse.parse(reports.map((report) => formatReport(report))));
 });
 
-router.post("/qc-reports", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
-  const parsed = CreateQcReportBody.safeParse(req.body);
+router.get("/qc-reports/summary", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+  const params = GetQcReportSummaryQueryParams.safeParse(req.query);
+  if (!params.success) {
+    res.status(400).json({ error: formatValidationError(params.error) });
+    return;
+  }
+
+  const conditions = [eq(qcReportsTable.tenantId, req.user!.tenantId)];
+  const fromDate = parseOptionalDate(params.data.from);
+  const toDate = parseOptionalDate(params.data.to);
+  if ((params.data.from && !fromDate) || (params.data.to && !toDate)) {
+    res.status(400).json({ error: "Invalid date range" });
+    return;
+  }
+
+  if (fromDate) {
+    conditions.push(gte(qcReportsTable.inspectedAt, fromDate));
+  }
+  if (toDate) {
+    conditions.push(lte(qcReportsTable.inspectedAt, toDate));
+  }
+
+  const [summary] = await db.select({
+    total: count(),
+    passed: sql<number>`count(*) filter (where result = 'PASS')`.mapWith(Number),
+    failed: sql<number>`count(*) filter (where result = 'FAIL')`.mapWith(Number),
+    pending: sql<number>`count(*) filter (where result = 'PENDING')`.mapWith(Number),
+    rework: sql<number>`count(*) filter (where result = 'REWORK')`.mapWith(Number),
+  }).from(qcReportsTable).where(and(...conditions));
+
+  res.json(GetQcReportSummaryResponse.parse(buildQcReportSummary(summary, {
+    from: params.data.from ?? null,
+    to: params.data.to ?? null,
+  })));
+});
+
+router.post("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+  const parsed = parseCreateQcReportBody(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: formatValidationError(parsed.error) });
     return;
   }
 
   const { fabricRollId, result, defects, defectCount, images, notes } = parsed.data;
-  const [roll] = await db.select().from(fabricRollsTable).where(
-    and(eq(fabricRollsTable.id, fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
-  );
 
-  if (!roll) {
-    res.status(404).json({ error: "Fabric roll not found" });
-    return;
+  try {
+    const created = await db.transaction(async (tx) => {
+      const [roll] = await tx.select().from(fabricRollsTable).where(
+        and(eq(fabricRollsTable.id, fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
+      );
+
+      if (!roll) {
+        return null;
+      }
+
+      assertRollCanReceiveQc(roll);
+
+      const decision = buildQcDecision(result);
+      const [report] = await tx.insert(qcReportsTable).values({
+        tenantId: req.user!.tenantId,
+        fabricRollId,
+        inspectedById: req.user!.userId,
+        result: decision.result,
+        defects: defects ?? null,
+        defectCount: defectCount ?? 0,
+        images: images ?? [],
+        notes: notes ?? null,
+        inspectedAt: new Date(),
+      }).returning();
+
+      const [updatedRoll] = await tx.update(fabricRollsTable).set({ status: decision.rollStatus }).where(
+        and(eq(fabricRollsTable.id, fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
+      ).returning();
+
+      await tx.insert(auditLogsTable).values({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        entityType: "qc_report",
+        entityId: report.id,
+        action: "CREATE",
+        changes: JSON.stringify({
+          result: decision.result,
+          defectCount,
+          fabricRollId,
+          productionOrderId: roll.productionOrderId,
+          previousRollStatus: roll.status,
+          nextRollStatus: decision.rollStatus,
+        }),
+      });
+
+      return { report, roll: updatedRoll };
+    });
+
+    if (!created) {
+      res.status(404).json({ error: "Fabric roll not found" });
+      return;
+    }
+
+    res.status(201).json(GetQcReportResponse.parse(formatReport(created.report, created.roll)));
+  } catch (error) {
+    if (respondQcWorkflowError(res, error)) {
+      return;
+    }
+
+    throw error;
   }
-
-  const [report] = await db.insert(qcReportsTable).values({
-    tenantId: req.user!.tenantId,
-    fabricRollId,
-    inspectedById: req.user!.userId,
-    result,
-    defects: defects ?? null,
-    defectCount: defectCount ?? 0,
-    images: images ?? [],
-    notes: notes ?? null,
-    inspectedAt: new Date(),
-  }).returning();
-
-  // Update roll status based on QC result
-  const newStatus = result === "PASS" ? "QC_PASSED" : result === "FAIL" ? "QC_FAILED" : "QC_PENDING";
-  await db.update(fabricRollsTable).set({ status: newStatus }).where(
-    and(eq(fabricRollsTable.id, fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
-  );
-
-  await db.insert(auditLogsTable).values({
-    tenantId: req.user!.tenantId,
-    userId: req.user!.userId,
-    entityType: "qc_report",
-    entityId: report.id,
-    action: "CREATE",
-    changes: JSON.stringify({ result, defectCount }),
-  });
-
-  res.status(201).json(GetQcReportResponse.parse(formatReport(report)));
 });
 
-router.get("/qc-reports/:id", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = GetQcReportParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -119,34 +228,104 @@ router.get("/qc-reports/:id", requireAuth, checkPlanAccess("pro"), async (req, r
   res.json(GetQcReportResponse.parse(formatReport(report)));
 });
 
-router.patch("/qc-reports/:id", requireAuth, checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.patch("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = UpdateQcReportParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
     return;
   }
-  const parsed = UpdateQcReportBody.safeParse(req.body);
+  const parsed = parseUpdateQcReportBody(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: formatValidationError(parsed.error) });
     return;
   }
 
-  const updates: Record<string, unknown> = {};
-  if (parsed.data.result != null) updates.result = parsed.data.result;
-  if (parsed.data.defects != null) updates.defects = parsed.data.defects;
-  if (parsed.data.defectCount != null) updates.defectCount = parsed.data.defectCount;
-  if (parsed.data.notes != null) updates.notes = parsed.data.notes;
+  try {
+    const updated = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(qcReportsTable).where(
+        and(eq(qcReportsTable.id, params.data.id), eq(qcReportsTable.tenantId, req.user!.tenantId))
+      );
 
-  const [report] = await db.update(qcReportsTable).set(updates).where(
-    and(eq(qcReportsTable.id, params.data.id), eq(qcReportsTable.tenantId, req.user!.tenantId))
-  ).returning();
+      if (!existing) {
+        return null;
+      }
 
-  if (!report) {
-    res.status(404).json({ error: "QC report not found" });
-    return;
+      const updates: Record<string, unknown> = {};
+      if (parsed.data.result != null) updates.result = parsed.data.result;
+      if (parsed.data.defects != null) updates.defects = parsed.data.defects;
+      if (parsed.data.defectCount != null) updates.defectCount = parsed.data.defectCount;
+      if (parsed.data.notes != null) updates.notes = parsed.data.notes;
+
+      const [report] = await tx.update(qcReportsTable).set(updates).where(
+        and(eq(qcReportsTable.id, params.data.id), eq(qcReportsTable.tenantId, req.user!.tenantId))
+      ).returning();
+
+      const [roll] = await tx.select().from(fabricRollsTable).where(
+        and(eq(fabricRollsTable.id, report.fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
+      );
+
+      if (parsed.data.result != null && roll) {
+        assertRollCanReceiveQc(roll);
+
+        const newStatus = getFabricRollStatusFromQcResult(parsed.data.result);
+        const [updatedRoll] = await tx.update(fabricRollsTable).set({ status: newStatus }).where(
+          and(eq(fabricRollsTable.id, report.fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
+        ).returning();
+
+        await tx.insert(auditLogsTable).values({
+          tenantId: req.user!.tenantId,
+          userId: req.user!.userId,
+          entityType: "qc_report",
+          entityId: report.id,
+          action: existing.result !== report.result ? "QC_DECISION_UPDATED" : "UPDATE",
+          changes: buildAuditChanges({
+            before: {
+              ...pickAuditFields(existing, ["result", "defectCount", "notes"]),
+              fabricRollStatus: roll.status,
+            },
+            after: {
+              ...pickAuditFields(report, ["result", "defectCount", "notes"]),
+              fabricRollStatus: updatedRoll.status,
+            },
+            context: {
+              fabricRollId: report.fabricRollId,
+              productionOrderId: roll.productionOrderId,
+            },
+          }),
+        });
+
+        return { report, roll: updatedRoll };
+      }
+
+      await tx.insert(auditLogsTable).values({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        entityType: "qc_report",
+        entityId: report.id,
+        action: "UPDATE",
+        changes: buildAuditChanges({
+          before: pickAuditFields(existing, ["result", "defectCount", "notes"]),
+          after: pickAuditFields(report, ["result", "defectCount", "notes"]),
+          context: { fabricRollId: report.fabricRollId },
+        }),
+      });
+
+      return { report, roll };
+    });
+
+    if (!updated) {
+      res.status(404).json({ error: "QC report not found" });
+      return;
+    }
+
+    res.json(UpdateQcReportResponse.parse(formatReport(updated.report, updated.roll)));
+  } catch (error) {
+    if (respondQcWorkflowError(res, error)) {
+      return;
+    }
+
+    throw error;
   }
-
-  res.json(UpdateQcReportResponse.parse(formatReport(report)));
 });
 
 export default router;

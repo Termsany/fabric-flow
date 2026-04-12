@@ -19,6 +19,33 @@ export interface ProductionOrder {
   /** @nullable */
   notes?: string | null;
   rollsGenerated: number;
+  fabricRollIds?: number[];
+  linkedFabricRolls?: {
+    id: number;
+    rollCode: string;
+    status: string;
+    color?: string;
+    length?: number;
+    weight?: number;
+    warehouseId?: number | null;
+  }[];
+  workflow?: {
+    currentState: string;
+    rollCountsByStatus: Record<string, number>;
+    readiness: {
+      totalRolls: number;
+      readyForQc: number;
+      readyForDyeing: number;
+      readyForWarehouse: number;
+      readyForSales: number;
+      sold: number;
+    };
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }

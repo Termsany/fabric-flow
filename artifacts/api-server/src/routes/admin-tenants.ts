@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, count, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -17,6 +17,7 @@ import {
 import {
   requireAuth,
   requireAdminPermission,
+  hasAdminPermission,
   signToken,
   writeAdminAuditLog,
 } from "../lib/auth";
@@ -127,6 +128,7 @@ router.get("/admin/tenants/:id", requireAuth, requireAdminPermission("tenants.re
     res.status(404).json({ error: "Tenant not found" });
     return;
   }
+  const canReadBilling = hasAdminPermission(req.user!.role, "billing.read");
 
   const [stats] = await db.select({
     usersCount: sql<number>`(select count(*) from users where tenant_id = ${tenant.id})`.mapWith(Number),
@@ -225,8 +227,8 @@ router.get("/admin/tenants/:id", requireAuth, requireAdminPermission("tenants.re
     subscriptionInterval: tenant.subscriptionInterval,
     subscriptionEndsAt: tenant.subscriptionEndsAt?.toISOString() ?? null,
     trialEndsAt: tenant.trialEndsAt?.toISOString() ?? null,
-    stripeCustomerId: tenant.stripeCustomerId ?? null,
-    stripeSubscriptionId: tenant.stripeSubscriptionId ?? null,
+    stripeCustomerId: canReadBilling ? (tenant.stripeCustomerId ?? null) : null,
+    stripeSubscriptionId: canReadBilling ? (tenant.stripeSubscriptionId ?? null) : null,
     createdAt: tenant.createdAt.toISOString(),
     updatedAt: tenant.updatedAt.toISOString(),
     permissions: {
@@ -249,25 +251,29 @@ router.get("/admin/tenants/:id", requireAuth, requireAdminPermission("tenants.re
       userName: log.userName ?? null,
       createdAt: log.createdAt.toISOString(),
     })),
-    invoiceHistory: invoiceHistory.map((invoice) => ({
-      id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      amount: invoice.amount,
-      currency: invoice.currency,
-      status: invoice.status,
-      issuedAt: invoice.issuedAt.toISOString(),
-      dueAt: invoice.dueAt?.toISOString() ?? null,
-      paidAt: invoice.paidAt?.toISOString() ?? null,
-    })),
-    billingActionLogs: billingActionLogs.map((entry) => ({
-      id: entry.id,
-      action: entry.action,
-      adminEmail: entry.adminEmail,
-      adminRole: entry.adminRole,
-      severity: entry.severity,
-      metadata: entry.metadata,
-      createdAt: entry.createdAt.toISOString(),
-    })),
+    invoiceHistory: canReadBilling
+      ? invoiceHistory.map((invoice) => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          amount: invoice.amount,
+          currency: invoice.currency,
+          status: invoice.status,
+          issuedAt: invoice.issuedAt.toISOString(),
+          dueAt: invoice.dueAt?.toISOString() ?? null,
+          paidAt: invoice.paidAt?.toISOString() ?? null,
+        }))
+      : [],
+    billingActionLogs: canReadBilling
+      ? billingActionLogs.map((entry) => ({
+          id: entry.id,
+          action: entry.action,
+          adminEmail: entry.adminEmail,
+          adminRole: entry.adminRole,
+          severity: entry.severity,
+          metadata: entry.metadata,
+          createdAt: entry.createdAt.toISOString(),
+        }))
+      : [],
   });
 });
 
@@ -517,7 +523,11 @@ router.post("/admin/tenants/:id/impersonate", requireAuth, requireAdminPermissio
   }
 
   const [user] = await db.select().from(usersTable).where(
-    and(eq(usersTable.tenantId, params.data.id), eq(usersTable.role, "admin"), eq(usersTable.isActive, true)),
+    and(
+      eq(usersTable.tenantId, params.data.id),
+      inArray(usersTable.role, ["tenant_admin", "admin"]),
+      eq(usersTable.isActive, true),
+    ),
   );
 
   if (!user) {

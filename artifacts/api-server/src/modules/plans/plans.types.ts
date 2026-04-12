@@ -3,6 +3,16 @@ export type PlanInterval = typeof PLAN_INTERVALS[number];
 
 export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "canceled", "unpaid", "incomplete"] as const;
 export type SubscriptionStatus = typeof SUBSCRIPTION_STATUSES[number];
+export type SubscriptionStatusSummary = {
+  state: "active" | "trialing" | "scheduled_cancel" | "past_due" | "unpaid" | "incomplete" | "canceled";
+  severity: "success" | "info" | "warning" | "danger";
+  hasAccess: boolean;
+  needsAttention: boolean;
+  isEndingSoon: boolean;
+  nextRelevantAt: string | null;
+  nextRelevantType: "trial_end" | "renewal" | "cancellation" | null;
+  lastInvoiceStatus: string | null;
+};
 
 export interface PlanFeatureDto {
   id: number;
@@ -66,5 +76,6 @@ export interface TenantSubscriptionDto {
   trialEndsAt: string | null;
   canceledAt: string | null;
   metadata: Record<string, unknown>;
+  statusSummary: SubscriptionStatusSummary;
   plan: PlanDto;
 }

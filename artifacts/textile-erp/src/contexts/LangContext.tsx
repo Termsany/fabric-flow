@@ -1,4 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { type Language, translations } from "@/lib/i18n";
 
 interface LangContextType {
@@ -16,6 +18,7 @@ const LangContext = createContext<LangContextType>({
 });
 
 export function LangProvider({ children }: { children: ReactNode }) {
+  useTranslation();
   const [lang, setLangState] = useState<Language>(() => {
     return (localStorage.getItem("textile_erp_lang") as Language) || "ar";
   });
@@ -23,6 +26,7 @@ export function LangProvider({ children }: { children: ReactNode }) {
   const setLang = (newLang: Language) => {
     setLangState(newLang);
     localStorage.setItem("textile_erp_lang", newLang);
+    void i18n.changeLanguage(newLang);
   };
 
   useEffect(() => {
@@ -33,7 +37,7 @@ export function LangProvider({ children }: { children: ReactNode }) {
     document.body.setAttribute("data-lang", lang);
   }, [lang]);
 
-  const t = translations[lang];
+  const t = i18n.getResourceBundle(lang, "translation") as typeof translations.ar;
   const isRTL = lang === "ar";
 
   return (

@@ -9,6 +9,7 @@
 export type ListWarehouseMovementsParams = {
   fabricRollId?: number;
   warehouseId?: number;
+  search?: string;
   limit?: number;
   offset?: number;
 };

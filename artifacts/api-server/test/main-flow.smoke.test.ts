@@ -8,20 +8,26 @@ test("main auth-to-order flow works through controller layer", async () => {
   const authController = createAuthController({
     authService: {
       login: async () => ({
-        token: "token-1",
-        user: {
-          id: 11,
-          tenantId: 4,
-          email: "admin@example.com",
-          fullName: "Admin",
-          role: "admin",
-          isActive: true,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+        ok: true,
+        status: 200,
+        data: {
+          token: "token-1",
+          user: {
+            id: 11,
+            tenantId: 4,
+            email: "admin@example.com",
+            fullName: "Admin",
+            role: "admin",
+            isActive: true,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
         },
       }),
-      register: async () => ({ error: "not-used" as const }),
+      register: async () => ({ ok: false, status: 400, error: "not-used" }),
       getCurrentUser: async () => ({
+        ok: true,
+        status: 200,
         data: {
           id: 11,
           tenantId: 4,
@@ -33,7 +39,7 @@ test("main auth-to-order flow works through controller layer", async () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       }),
-      changePassword: async () => ({ status: 200 as const, data: { success: true } }),
+      changePassword: async () => ({ ok: true, status: 200, data: { success: true } }),
     },
   });
   const salesController = createSalesController({
@@ -54,6 +60,19 @@ test("main auth-to-order flow works through controller layer", async () => {
       getCustomer: async () => null,
       updateCustomer: async () => null,
       listSalesOrders: async () => [],
+      getSalesReport: async () => ({
+        totalSalesCount: 0,
+        deliveredSalesCount: 0,
+        pendingSalesCount: 0,
+        recordedTotalAmount: 0,
+        volume: {
+          totalRollsAllocated: 0,
+          deliveredRolls: 0,
+          averageRollsPerSale: 0,
+        },
+        byStatus: [],
+        recentSales: [],
+      }),
       createSalesOrder: async () => ({
         data: {
           id: 50,
@@ -62,7 +81,7 @@ test("main auth-to-order flow works through controller layer", async () => {
           customerId: 9,
           status: "DRAFT",
           totalAmount: 650,
-          rollIds: [],
+          rollIds: [1],
           invoiceNumber: null,
           notes: null,
           createdAt: "2026-01-01T00:00:00.000Z",
@@ -98,7 +117,7 @@ test("main auth-to-order flow works through controller layer", async () => {
 
   const orderReq = createMockRequest({
     user: { userId: 11, tenantId: 4, role: "admin", email: "admin@example.com" },
-    body: { customerId: 9, totalAmount: 650, rollIds: [] },
+    body: { customerId: 9, totalAmount: 650, rollIds: [1] },
   });
   const orderRes = createMockResponse();
   await salesController.createSalesOrder(orderReq, orderRes.response);

@@ -6,11 +6,21 @@ import { useCancelSubscription, useChangeSubscriptionPlan, useCurrentSubscriptio
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type { PaymentMethodCode } from "@/lib/payment-methods";
+import {
+  getSubscriptionNextEventLabel,
+  getSubscriptionStatusLabel,
+  getSubscriptionStatusMessage,
+  getSubscriptionStatusTone,
+} from "@/lib/subscription-status";
 
 export function SubscriptionPage() {
   const { t, lang } = useLang();
   const { data, isLoading, error, refetch } = useCurrentSubscription();
-  const { data: publicPlans = [] } = usePublicPlans();
+  const {
+    data: publicPlans = [],
+    isLoading: arePlansLoading,
+    error: plansError,
+  } = usePublicPlans();
   const subscribeMutation = useSubscribePlan();
   const changeMutation = useChangeSubscriptionPlan();
   const cancelMutation = useCancelSubscription();
@@ -23,20 +33,26 @@ export function SubscriptionPage() {
   const currentAppliedAmountEgp = data
     ? (data.subscription.baseCurrency === "USD" ? data.subscription.amountEgp : data.subscription.amount) ?? null
     : null;
+  const isMutating = subscribeMutation.isPending || changeMutation.isPending || cancelMutation.isPending;
+  const getErrorMessage = (value: unknown) => (value instanceof Error ? value.message : t.failedToLoadData);
 
-  const handleSelectPlan = (planCode: string) => {
+  const handleSelectPlan = async (planCode: string) => {
     const payload = {
       planCode,
       interval: selectedInterval,
       paymentMethodCode: selectedPaymentMethod || undefined,
     };
 
-    if (currentPlanCode) {
-      void changeMutation.mutateAsync(payload).then(() => toast({ title: t.saveChanges, description: t.planUpdated }));
-      return;
+    try {
+      if (currentPlanCode) {
+        await changeMutation.mutateAsync(payload);
+      } else {
+        await subscribeMutation.mutateAsync(payload);
+      }
+      toast({ title: t.saveChanges, description: t.planUpdated });
+    } catch (mutationError) {
+      toast({ title: t.billing, description: getErrorMessage(mutationError) });
     }
-
-    void subscribeMutation.mutateAsync(payload).then(() => toast({ title: t.saveChanges, description: t.planUpdated }));
   };
 
   return (
@@ -57,9 +73,15 @@ export function SubscriptionPage() {
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="text-sm text-slate-500">{t.currentPlan}</div>
               <div className="mt-2 text-3xl font-bold text-slate-900">{lang === "ar" ? data.subscription.plan.nameAr : data.subscription.plan.nameEn}</div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getSubscriptionStatusTone(data.subscription.statusSummary)}`}>
+                  {getSubscriptionStatusLabel(data.subscription.statusSummary, t)}
+                </span>
+                <span className="text-sm text-slate-600">{getSubscriptionStatusMessage(data.subscription.statusSummary, t)}</span>
+              </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div><div className="text-xs text-slate-500">{t.subscriptionStatus}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.status}</div></div>
-                <div><div className="text-xs text-slate-500">{t.renewalDate}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.currentPeriodEnd ? formatDateTime(data.subscription.currentPeriodEnd, lang) : "-"}</div></div>
+                <div><div className="text-xs text-slate-500">{t.subscriptionStatus}</div><div className="mt-1 font-medium text-slate-900">{getSubscriptionStatusLabel(data.subscription.statusSummary, t)}</div></div>
+                <div><div className="text-xs text-slate-500">{getSubscriptionNextEventLabel(data.subscription.statusSummary, t) || t.renewalDate}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.statusSummary.nextRelevantAt ? formatDateTime(data.subscription.statusSummary.nextRelevantAt, lang) : "-"}</div></div>
                 <div>
                   <div className="text-xs text-slate-500">{t.amount}</div>
                   <div className="mt-1 font-medium text-slate-900">
@@ -75,7 +97,18 @@ export function SubscriptionPage() {
                 </div>
                 <div><div className="text-xs text-slate-500">{t.paymentMethod}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.paymentMethodCode || "-"}</div></div>
                 <div><div className="text-xs text-slate-500">{t.createdAt}</div><div className="mt-1 font-medium text-slate-900">{formatDateTime(data.subscription.startedAt, lang)}</div></div>
+                <div><div className="text-xs text-slate-500">{t.accessStatus}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.statusSummary.hasAccess ? t.accessActive : t.accessRestricted}</div></div>
+                <div><div className="text-xs text-slate-500">{t.lastInvoiceStatus}</div><div className="mt-1 font-medium text-slate-900">{data.subscription.statusSummary.lastInvoiceStatus || "-"}</div></div>
               </div>
+              {(data.subscription.statusSummary.needsAttention || data.subscription.statusSummary.isEndingSoon) ? (
+                <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+                  data.subscription.statusSummary.needsAttention
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                }`}>
+                  {getSubscriptionStatusMessage(data.subscription.statusSummary, t)}
+                </div>
+              ) : null}
               <div className="mt-5 rounded-2xl bg-slate-50 p-4">
                 <div className="mb-2 text-sm font-medium text-slate-900">{t.planFeatures}</div>
                 <div className="space-y-2 text-sm text-slate-600">
@@ -87,10 +120,15 @@ export function SubscriptionPage() {
             </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              {plansError ? (
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {plansError instanceof Error ? plansError.message : t.billingActivityLoadError}
+                </div>
+              ) : null}
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <button type="button" onClick={() => setSelectedInterval("monthly")} className={`rounded-xl px-4 py-2 text-sm font-medium ${selectedInterval === "monthly" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>{t.monthly}</button>
                 <button type="button" onClick={() => setSelectedInterval("yearly")} className={`rounded-xl px-4 py-2 text-sm font-medium ${selectedInterval === "yearly" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>{t.yearly}</button>
-                  <select value={selectedPaymentMethod} onChange={(e) => setSelectedPaymentMethod(e.target.value as PaymentMethodCode | "")} className="min-w-52 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                  <select value={selectedPaymentMethod} disabled={isMutating} onChange={(e) => setSelectedPaymentMethod(e.target.value as PaymentMethodCode | "")} className="min-w-52 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 disabled:opacity-60">
                   <option value="">{t.choosePaymentMethod}</option>
                   {data.paymentMethods.map((method) => (
                     <option key={method.code} value={method.code}>{lang === "ar" ? method.name_ar : method.name_en}</option>
@@ -98,6 +136,17 @@ export function SubscriptionPage() {
                 </select>
               </div>
 
+              {arePlansLoading ? (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="h-72 animate-pulse rounded-3xl bg-slate-100" />
+                  <div className="h-72 animate-pulse rounded-3xl bg-slate-100" />
+                  <div className="h-72 animate-pulse rounded-3xl bg-slate-100" />
+                </div>
+              ) : availablePlans.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                  {t.noBillingPlansAvailable}
+                </div>
+              ) : (
               <div className="grid gap-4 md:grid-cols-3">
                 {availablePlans.map((plan) => {
                   const price = plan.prices.find((item) => item.interval === selectedInterval);
@@ -156,15 +205,28 @@ export function SubscriptionPage() {
                       ) : null}
                       <div className="mt-5 flex gap-2">
                         {isCurrent ? (
-                          <button type="button" disabled={cancelMutation.isPending} onClick={() => void cancelMutation.mutateAsync({ cancelAtPeriodEnd: true }).then(() => toast({ title: t.billing, description: t.canceled }))} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600">{t.cancel}</button>
+                          <button
+                            type="button"
+                            disabled={cancelMutation.isPending}
+                            onClick={() => {
+                              void cancelMutation.mutateAsync({ cancelAtPeriodEnd: true })
+                                .then(() => toast({ title: t.billing, description: t.canceled }))
+                                .catch((mutationError) => {
+                                  toast({ title: t.billing, description: getErrorMessage(mutationError) });
+                                });
+                            }}
+                            className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 disabled:opacity-60"
+                          >
+                            {cancelMutation.isPending ? t.subscriptionActionInProgress : t.cancel}
+                          </button>
                         ) : (
                           <button
                             type="button"
-                            disabled={subscribeMutation.isPending || changeMutation.isPending}
-                            onClick={() => handleSelectPlan(plan.code)}
-                            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                            disabled={isMutating}
+                            onClick={() => { void handleSelectPlan(plan.code); }}
+                            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                           >
-                            {currentPlanCode ? t.changePlan : t.subscribe}
+                            {isMutating ? t.subscriptionActionInProgress : currentPlanCode ? t.changePlan : t.subscribe}
                           </button>
                         )}
                       </div>
@@ -172,13 +234,14 @@ export function SubscriptionPage() {
                   );
                 })}
               </div>
+              )}
             </section>
           </div>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 text-lg font-semibold text-slate-900">{t.invoiceHistory}</div>
             {data.history.length === 0 ? (
-              <div className="text-sm text-slate-500">{t.noData}</div>
+              <div className="text-sm text-slate-500">{t.subscriptionHistoryEmptyState}</div>
             ) : (
               <div className="space-y-3">
                 {data.history.map((entry) => (

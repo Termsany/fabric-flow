@@ -4,16 +4,10 @@ import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useLogin } from "@workspace/api-client-react";
-
-function getPostLoginPath(role?: string) {
-  if (role === "billing_admin") return "/admin/billing";
-  if (role === "security_admin") return "/admin/monitoring";
-  if (["super_admin", "support_admin", "readonly_admin"].includes(role || "")) return "/admin/tenants";
-  return "/dashboard";
-}
+import { getHomeRouteForRole } from "@/lib/roles";
 
 export function LoginPage() {
-  const { t, lang, isRTL } = useLang();
+  const { t, isRTL } = useLang();
   const { login } = useAuth();
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
@@ -24,7 +18,7 @@ export function LoginPage() {
     mutation: {
       onSuccess: (data) => {
         login(data as any);
-        navigate(getPostLoginPath((data as any)?.user?.role));
+        navigate(getHomeRouteForRole((data as any)?.user?.role));
       },
       onError: (err) => {
         const status = typeof (err as { status?: unknown })?.status === "number"
@@ -32,7 +26,7 @@ export function LoginPage() {
           : undefined;
 
         if (status && status >= 500) {
-          setError(lang === "ar" ? "تعذر الوصول إلى الخادم أو تم رفض الطلب من الإعدادات الأمنية" : "Server access failed or the request was blocked by security settings");
+          setError(t.loginServerError);
           return;
         }
 
@@ -85,7 +79,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder={lang === "ar" ? "بريدك الإلكتروني" : "your@email.com"}
+                placeholder={t.loginEmailPlaceholder}
                 dir="ltr"
               />
             </div>

@@ -21,12 +21,15 @@ test("salesService.createSalesOrder rejects tenant roll mismatch", async () => {
       }],
       updateCustomer: async () => [],
       listSalesOrders: async () => [],
-      findTenantRollIds: async () => [{ id: 10 }],
+      findTenantRollIds: async () => [{ id: 10, status: "IN_STOCK", warehouseId: 3 }],
       createSalesOrder: async () => [],
       updateRollStatusForTenant: async () => undefined,
       insertAuditLog: async () => undefined,
       findSalesOrderById: async () => [],
       updateSalesOrder: async () => [],
+      getSalesReportTotals: async () => [],
+      listSalesStatusCounts: async () => [],
+      listRecentSales: async () => [],
     },
   });
 
@@ -51,7 +54,10 @@ test("salesService.updateSalesOrder marks delivered rolls as sold", async () => 
       findCustomerById: async () => [],
       updateCustomer: async () => [],
       listSalesOrders: async () => [],
-      findTenantRollIds: async () => [],
+      findTenantRollIds: async () => [
+        { id: 101, status: "RESERVED", warehouseId: 3 },
+        { id: 102, status: "RESERVED", warehouseId: 3 },
+      ],
       createSalesOrder: async () => [],
       updateRollStatusForTenant: async (tenantId, rollIds, status) => {
         calls.push({ tenantId, rollIds, status: status ?? "" });
@@ -83,6 +89,9 @@ test("salesService.updateSalesOrder marks delivered rolls as sold", async () => 
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
         updatedAt: new Date("2026-01-02T00:00:00.000Z"),
       }],
+      getSalesReportTotals: async () => [],
+      listSalesStatusCounts: async () => [],
+      listRecentSales: async () => [],
     },
   });
 

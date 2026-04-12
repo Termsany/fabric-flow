@@ -10,6 +10,7 @@
     "dev:db": "docker compose up -d postgres",
     "db:push": "pnpm --filter @workspace/db run push",
     "db:push:force": "pnpm --filter @workspace/db run push-force",
+    "db:push:prod": "node ./lib/db/run-drizzle.mjs push --config ./lib/db/drizzle.config.ts",
     "seed": "pnpm --filter @workspace/scripts run seed",
     "test": "pnpm --filter @workspace/api-server run test",
     "test:auth": "pnpm --filter @workspace/api-server exec sh -lc 'DATABASE_URL=postgresql://postgres:postgres@localhost:5432/roll_manager node --import tsx --test ./src/modules/auth/auth.service.test.ts ./test/auth.routes.integration.test.ts'",

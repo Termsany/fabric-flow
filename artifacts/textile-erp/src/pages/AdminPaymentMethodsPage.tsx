@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/payment-methods/ConfirmDialog";
 import { DataTable } from "@/components/payment-methods/DataTable";
 import { StatCard } from "@/components/payment-methods/StatCard";
 import { useLang } from "@/contexts/LangContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   useAdminPaymentMethods,
   usePaymentMethodTenants,
@@ -16,9 +17,11 @@ import {
 import type { AdminPaymentMethodDefinition, PaymentMethodCode } from "@/lib/payment-methods";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { toast } from "@/hooks/use-toast";
+import { hasPlatformAdminPermission } from "@/lib/roles";
 
 export function AdminPaymentMethodsPage() {
   const { t, lang } = useLang();
+  const { user } = useAuth();
   const { data: methods = [], isLoading, error, refetch } = useAdminPaymentMethods();
   const updateMutation = useUpdateAdminPaymentMethod();
   const [search, setSearch] = useState("");
@@ -53,6 +56,8 @@ export function AdminPaymentMethodsPage() {
     disabled: methods.filter((item) => !item.is_globally_enabled).length,
     activations: methods.reduce((sum, item) => sum + item.tenants_count, 0),
   }), [methods]);
+  const canManageGlobalPaymentMethods = hasPlatformAdminPermission(user?.role, "payment_methods.manage_global");
+  const canViewPaymentMethodTenants = hasPlatformAdminPermission(user?.role, "tenant_payment_methods.view_any");
 
   const saveGlobalMethod = async (record: AdminPaymentMethodDefinition, form: Record<string, unknown>) => {
     await updateMutation.mutateAsync({
@@ -145,17 +150,23 @@ export function AdminPaymentMethodsPage() {
                   <td className="px-4 py-4 text-slate-500">{formatDateTime(method.updated_at, lang)}</td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setSelectedCode(method.code)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-                        <Eye size={14} />
-                        {t.usedByTenants}
-                      </button>
-                      <button type="button" onClick={() => setEditing(method)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-                        <Settings2 size={14} />
-                        {t.edit}
-                      </button>
-                      <button type="button" onClick={() => setConfirming(method)} className={`rounded-xl px-3 py-2 text-xs font-medium text-white ${method.is_globally_enabled ? "bg-rose-600" : "bg-emerald-600"}`}>
-                        {method.is_globally_enabled ? t.disable : t.enable}
-                      </button>
+                      {canViewPaymentMethodTenants ? (
+                        <button type="button" onClick={() => setSelectedCode(method.code)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                          <Eye size={14} />
+                          {t.usedByTenants}
+                        </button>
+                      ) : null}
+                      {canManageGlobalPaymentMethods ? (
+                        <>
+                          <button type="button" onClick={() => setEditing(method)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                            <Settings2 size={14} />
+                            {t.edit}
+                          </button>
+                          <button type="button" onClick={() => setConfirming(method)} className={`rounded-xl px-3 py-2 text-xs font-medium text-white ${method.is_globally_enabled ? "bg-rose-600" : "bg-emerald-600"}`}>
+                            {method.is_globally_enabled ? t.disable : t.enable}
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -166,7 +177,7 @@ export function AdminPaymentMethodsPage() {
       </div>
 
       <PaymentMethodFormModal
-        open={Boolean(editing)}
+        open={canManageGlobalPaymentMethods && Boolean(editing)}
         mode="global"
         title={t.editGlobalPaymentMethod}
         saveLabel={t.saveChanges}
@@ -182,7 +193,7 @@ export function AdminPaymentMethodsPage() {
       />
 
       <ConfirmDialog
-        open={Boolean(confirming)}
+        open={canManageGlobalPaymentMethods && Boolean(confirming)}
         title={confirming?.is_globally_enabled ? t.disable : t.enable}
         description={confirming?.is_globally_enabled ? t.disablePaymentMethodGlobalConfirm : t.enablePaymentMethodGlobalConfirm}
         confirmLabel={confirming?.is_globally_enabled ? t.disable : t.enable}

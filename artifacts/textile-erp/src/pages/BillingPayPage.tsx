@@ -42,17 +42,29 @@ export function BillingPayPage() {
   const [proofImage, setProofImage] = useState<File | null>(null);
   const [error, setError] = useState("");
 
-  const { data: subscription, isLoading } = useQuery({
+  const {
+    data: subscription,
+    isLoading: isSubscriptionLoading,
+    error: subscriptionError,
+  } = useQuery({
     queryKey: ["billing-subscription"],
     queryFn: getBillingSubscription,
   });
 
-  const { data: payments } = useQuery({
+  const {
+    data: payments = [],
+    isLoading: arePaymentsLoading,
+    error: paymentsError,
+  } = useQuery({
     queryKey: ["billing-payments"],
     queryFn: listManualPayments,
   });
 
-  const { data: billingMethods = [] } = useQuery({
+  const {
+    data: billingMethods = [],
+    isLoading: areMethodsLoading,
+    error: billingMethodsError,
+  } = useQuery({
     queryKey: ["billing-payment-methods"],
     queryFn: getBillingPaymentMethods,
   });
@@ -103,6 +115,8 @@ export function BillingPayPage() {
       }))
     : subscription?.manualPayment.methods ?? [];
   const selectedMethodDetails = activeMethods.find((item) => item.method === method) ?? activeMethods[0] ?? null;
+  const pendingPayment = payments.find((payment) => payment.status === "pending") ?? null;
+  const paymentUnderReview = payments.find((payment) => payment.status === "pending_review") ?? null;
 
   const effectiveMethod = selectedMethodDetails?.method ?? method;
   const localCurrency = subscription?.manualPayment.localCurrency ?? "EGP";
@@ -137,11 +151,25 @@ export function BillingPayPage() {
       />
 
       {error ? <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {pendingPayment ? (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {t.pendingPaymentExists}
+        </div>
+      ) : null}
+      {!pendingPayment && paymentUnderReview ? (
+        <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          {t.pendingReviewPaymentExists}
+        </div>
+      ) : null}
 
-      {isLoading || !subscription ? (
+      {isSubscriptionLoading ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="h-80 animate-pulse rounded-3xl bg-slate-200" />
           <div className="h-80 animate-pulse rounded-3xl bg-slate-200" />
+        </div>
+      ) : subscriptionError || !subscription ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+          {subscriptionError instanceof Error ? subscriptionError.message : t.failedToLoadData}
         </div>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
@@ -150,7 +178,13 @@ export function BillingPayPage() {
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">{t.choosePaymentMethod}</label>
-                {activeMethods.length === 0 ? (
+                {areMethodsLoading ? (
+                  <div className="h-24 animate-pulse rounded-2xl bg-slate-100" />
+                ) : billingMethodsError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {billingMethodsError instanceof Error ? billingMethodsError.message : t.failedToLoadData}
+                  </div>
+                ) : activeMethods.length === 0 ? (
                   <AdminEmptyState title={t.noActivePaymentMethods} />
                 ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -216,6 +250,12 @@ export function BillingPayPage() {
                 </div>
               </div>
             </div>
+
+            {paymentsError ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {paymentsError instanceof Error ? paymentsError.message : t.billingActivityLoadError}
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -225,9 +265,12 @@ export function BillingPayPage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">{t.paymentReferenceNumber}</label>
                 <input
                   value={referenceNumber}
-                  onChange={(event) => setReferenceNumber(event.target.value)}
+                  onChange={(event) => {
+                    setReferenceNumber(event.target.value);
+                    if (error) setError("");
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
-                  placeholder={lang === "ar" ? "أدخل رقم العملية" : "Enter transaction reference"}
+                  placeholder={t.billingReferencePlaceholder}
                 />
               </div>
 
@@ -240,7 +283,10 @@ export function BillingPayPage() {
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
                     className="hidden"
-                    onChange={(event) => setProofImage(event.target.files?.[0] || null)}
+                    onChange={(event) => {
+                      setProofImage(event.target.files?.[0] || null);
+                      if (error) setError("");
+                    }}
                   />
                 </label>
               </div>
@@ -248,7 +294,7 @@ export function BillingPayPage() {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitPayment.isPending || !selectedMethodDetails}
+                disabled={submitPayment.isPending || !selectedMethodDetails || Boolean(pendingPayment) || areMethodsLoading || arePaymentsLoading}
                 className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
               >
                 {submitPayment.isPending ? t.loading : t.payNow}

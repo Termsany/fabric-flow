@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLang } from "@/contexts/LangContext";
 import { Layout } from "@/components/Layout";
 import { PageHeader } from "@/components/PageHeader";
+import { FABRIC_ROLL_WORKFLOW_STATUS } from "@/lib/workflow-statuses";
 import {
   useListWarehouses,
   useCreateWarehouse,
@@ -20,12 +21,23 @@ export function WarehousePage() {
   const qc = useQueryClient();
   const [showCreateWarehouse, setShowCreateWarehouse] = useState(false);
   const [showMoveRoll, setShowMoveRoll] = useState(false);
+  const [movementSearch, setMovementSearch] = useState("");
   const [whForm, setWhForm] = useState({ name: "", location: "", capacity: "" });
   const [moveForm, setMoveForm] = useState({ fabricRollId: "", fromWarehouseId: "", toWarehouseId: "", reason: "" });
 
   const { data: warehouses, isLoading: whLoading, error: warehousesError } = useListWarehouses();
-  const { data: movements, isLoading: movLoading, error: movementsError } = useListWarehouseMovements({});
-  const { data: inStockRolls } = useListFabricRolls({ status: "IN_STOCK", limit: 200 });
+  const normalizedMovementSearch = movementSearch.trim();
+  const { data: movements, isLoading: movLoading, error: movementsError } = useListWarehouseMovements(
+    normalizedMovementSearch ? { search: normalizedMovementSearch } : {},
+  );
+  const { data: warehouseCandidateRolls } = useListFabricRolls({ limit: 200 });
+  const intakeReadyStatuses: string[] = [
+    FABRIC_ROLL_WORKFLOW_STATUS.qcPassed,
+    FABRIC_ROLL_WORKFLOW_STATUS.finished,
+    FABRIC_ROLL_WORKFLOW_STATUS.inStock,
+  ];
+  const eligibleWarehouseRolls = (warehouseCandidateRolls || []).filter((roll) => intakeReadyStatuses.includes(roll.status));
+  const eligibleWarehouseRollsCount = eligibleWarehouseRolls.length;
 
   const createWarehouse = useCreateWarehouse({
     mutation: {
@@ -153,7 +165,7 @@ export function WarehousePage() {
                 <select value={moveForm.fabricRollId} onChange={(e) => setMoveForm({ ...moveForm, fabricRollId: e.target.value })} required
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="">{t.search}...</option>
-                  {(inStockRolls || []).map((r) => (
+                  {eligibleWarehouseRolls.map((r) => (
                     <option key={r.id} value={r.id}>{r.rollCode} - {r.color}</option>
                   ))}
                 </select>
@@ -197,7 +209,19 @@ export function WarehousePage() {
             <div key={i} className="h-32 bg-slate-200 rounded-xl animate-pulse"></div>
           ))
         ) : (warehouses || []).length === 0 ? (
-          <div className="col-span-3 bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">{t.noWarehousesYet}</div>
+          <div className="col-span-3 bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+            <div className="flex flex-col items-center gap-2">
+              <div>{t.noWarehousesYet}</div>
+              <div className="text-xs text-slate-500">{t.emptyWarehousesHint}</div>
+              <button
+                type="button"
+                onClick={() => setShowCreateWarehouse(true)}
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                {t.emptyWarehousesCta}
+              </button>
+            </div>
+          </div>
         ) : (
           (warehouses || []).map((wh) => (
             <div key={wh.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -218,8 +242,14 @@ export function WarehousePage() {
 
       {/* Movements */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-4 md:flex-row md:items-center md:justify-between">
           <h3 className="text-base font-semibold text-slate-800">{t.movements}</h3>
+          <input
+            value={movementSearch}
+            onChange={(event) => setMovementSearch(event.target.value)}
+            placeholder={`${t.search} roll / warehouse / movement ID...`}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 md:max-w-sm"
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -240,7 +270,24 @@ export function WarehousePage() {
                   ))}</tr>
                 ))
               ) : (movements || []).length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-400">{t.noMovementsYet}</td></tr>
+                <tr>
+                  <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <div>{t.noMovementsYet}</div>
+                      <div className="text-xs text-slate-500">{t.emptyMovementsHint}</div>
+                      {eligibleWarehouseRollsCount === 0 ? (
+                        <div className="text-xs text-slate-500">{t.emptyMovementsEligibleHint}</div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setShowMoveRoll(true)}
+                        className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                      >
+                        {t.emptyMovementsCta}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 (movements || []).map((mov) => (
                   <tr key={mov.id} className="hover:bg-slate-50">

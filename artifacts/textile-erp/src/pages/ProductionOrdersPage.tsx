@@ -17,6 +17,7 @@ export function ProductionOrdersPage() {
   const { t, lang } = useLang();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState({
     fabricType: "",
     gsm: "",
@@ -26,7 +27,8 @@ export function ProductionOrdersPage() {
     notes: "",
   });
 
-  const { data: orders, isLoading } = useListProductionOrders({});
+  const normalizedSearch = search.trim();
+  const { data: orders, isLoading } = useListProductionOrders(normalizedSearch ? { search: normalizedSearch } : {});
 
   const createOrder = useCreateProductionOrder({
     mutation: {
@@ -66,6 +68,15 @@ export function ProductionOrdersPage() {
           </button>
         }
       />
+
+      <div className="mb-4">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={`${t.search} ${t.orderNumber} / ID...`}
+          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
 
       {/* Create modal */}
       {showCreate && (
@@ -157,7 +168,19 @@ export function ProductionOrdersPage() {
                 ))
               ) : (orders || []).length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">{t.noOrders}</td>
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <div>{t.noOrders}</div>
+                      <div className="text-xs text-slate-500">{t.emptyProductionOrdersHint}</div>
+                      <button
+                        type="button"
+                        onClick={() => setShowCreate(true)}
+                        className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                      >
+                        {t.emptyProductionOrdersCta}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ) : (
                 (orders || []).map((order) => (

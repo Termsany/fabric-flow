@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { useLang } from "@/contexts/LangContext";
 import { Layout } from "@/components/Layout";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FABRIC_ROLL_STATUSES } from "@/lib/workflow-statuses";
 import {
   useGetFabricRoll,
   useListQcReports,
@@ -16,10 +17,64 @@ import { ArrowLeft, Package, CheckCircle } from "lucide-react";
 import { Link } from "wouter";
 import { formatDate } from "@/lib/format";
 
-const ROLL_STATUSES = [
-  "CREATED", "IN_PRODUCTION", "QC_PENDING", "QC_PASSED", "QC_FAILED",
-  "SENT_TO_DYEING", "IN_DYEING", "FINISHED", "IN_STOCK", "RESERVED", "SOLD",
-];
+type FabricRollDetailView = {
+  workflow?: {
+    currentStatus: string;
+    currentStage: string;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
+  traceability?: {
+    productionOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+    } | null;
+    currentWarehouse?: {
+      id: number;
+      name: string;
+      location: string;
+    } | null;
+    latestQc?: {
+      id: number;
+      result: string;
+      defectCount: number;
+      inspectedAt: string;
+      notes?: string | null;
+    } | null;
+    latestMovement?: {
+      id: number;
+      fromWarehouseId?: number | null;
+      toWarehouseId?: number | null;
+      movedAt: string;
+      reason?: string | null;
+    } | null;
+    latestDyeingOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      targetColor: string;
+    } | null;
+    latestSalesOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      customerId: number;
+    } | null;
+  };
+  timeline?: {
+    occurredAt: string;
+    type: string;
+    title: string;
+    description?: string | null;
+    status?: string | null;
+    entityType: string;
+    entityId: number;
+  }[];
+};
 
 export function FabricRollDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -65,6 +120,8 @@ export function FabricRollDetailPage() {
     );
   }
 
+  const rollDetail = roll as typeof roll & FabricRollDetailView;
+
   return (
     <Layout>
       <div className="mb-6">
@@ -78,7 +135,7 @@ export function FabricRollDetailPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 font-mono">{roll.rollCode}</h1>
             <div className="flex items-center gap-3 mt-2">
-              <StatusBadge status={roll.status} />
+              <StatusBadge status={rollDetail.status} />
               <span className="text-slate-500 text-sm">{roll.fabricType}</span>
             </div>
           </div>
@@ -103,6 +160,18 @@ export function FabricRollDetailPage() {
                 { label: t.width, value: `${roll.width} cm` },
                 { label: t.length, value: `${roll.length} m` },
                 { label: t.weight, value: `${roll.weight} kg` },
+                { label: "Current status", value: rollDetail.workflow?.currentStatus || rollDetail.status },
+                { label: "Current stage", value: rollDetail.workflow?.currentStage || "—" },
+                {
+                  label: "Production order",
+                  value: rollDetail.traceability?.productionOrder?.orderNumber || `#${rollDetail.productionOrderId}`,
+                },
+                {
+                  label: "Warehouse",
+                  value: rollDetail.traceability?.currentWarehouse
+                    ? `${rollDetail.traceability.currentWarehouse.name} (${rollDetail.traceability.currentWarehouse.location})`
+                    : "Unassigned",
+                },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <div className="text-xs font-medium text-slate-400 mb-1">{label}</div>
@@ -122,7 +191,7 @@ export function FabricRollDetailPage() {
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">{t.status}</option>
-                {ROLL_STATUSES.map((s) => (
+                {FABRIC_ROLL_STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {(t as unknown as Record<string, string>)[s] || s}
                   </option>
@@ -142,6 +211,119 @@ export function FabricRollDetailPage() {
               </button>
             </div>
           </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-base font-semibold text-slate-800 mb-4">{t.rollNextStepTitle}</h3>
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+              <div className="text-sm font-semibold text-indigo-900">
+                {rollDetail.workflow?.nextStep.action || t.rollNoImmediateAction}
+              </div>
+              <div className="mt-1 text-sm text-indigo-800">
+                {rollDetail.workflow?.nextStep.description || t.rollNoPendingAction}
+              </div>
+              {rollDetail.workflow?.nextStep.route && (
+                <div className="mt-3">
+                  <Link href={rollDetail.workflow.nextStep.route}>
+                    <button className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700">
+                      {t.rollOpenNextStep}
+                    </button>
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-base font-semibold text-slate-800 mb-4">{t.rollTraceability}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-slate-100 p-4">
+                <div className="text-xs font-medium text-slate-400 mb-1">{t.rollLatestQc}</div>
+                {rollDetail.traceability?.latestQc ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={rollDetail.traceability.latestQc.result} />
+                      <span className="text-xs text-slate-400">{formatDate(rollDetail.traceability.latestQc.inspectedAt, lang)}</span>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">{t.rollDefectsLabel}: {rollDetail.traceability.latestQc.defectCount}</div>
+                    {rollDetail.traceability.latestQc.notes && (
+                      <div className="mt-1 text-sm text-slate-500">{rollDetail.traceability.latestQc.notes}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-sm text-slate-400">{t.rollNoQcReport}</div>
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-100 p-4">
+                <div className="text-xs font-medium text-slate-400 mb-1">{t.rollLatestMovement}</div>
+                {rollDetail.traceability?.latestMovement ? (
+                  <>
+                    <div className="text-sm text-slate-700">
+                      #{rollDetail.traceability.latestMovement.fromWarehouseId || "—"} → #{rollDetail.traceability.latestMovement.toWarehouseId || "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">{formatDate(rollDetail.traceability.latestMovement.movedAt, lang)}</div>
+                    <div className="mt-2 text-sm text-slate-500">{rollDetail.traceability.latestMovement.reason || t.rollNoMovementReason}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-slate-400">{t.rollNoMovement}</div>
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-100 p-4">
+                <div className="text-xs font-medium text-slate-400 mb-1">{t.rollLatestDyeing}</div>
+                {rollDetail.traceability?.latestDyeingOrder ? (
+                  <>
+                    <div className="text-sm font-medium text-slate-700">{rollDetail.traceability.latestDyeingOrder.orderNumber}</div>
+                    <div className="mt-1"><StatusBadge status={rollDetail.traceability.latestDyeingOrder.status} /></div>
+                    <div className="mt-2 text-sm text-slate-500">{rollDetail.traceability.latestDyeingOrder.targetColor}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-slate-400">{t.rollNoDyeing}</div>
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-100 p-4">
+                <div className="text-xs font-medium text-slate-400 mb-1">{t.rollLatestSales}</div>
+                {rollDetail.traceability?.latestSalesOrder ? (
+                  <>
+                    <div className="text-sm font-medium text-slate-700">{rollDetail.traceability.latestSalesOrder.orderNumber}</div>
+                    <div className="mt-1"><StatusBadge status={rollDetail.traceability.latestSalesOrder.status} /></div>
+                    <div className="mt-2 text-sm text-slate-500">{t.rollCustomerLabel} #{rollDetail.traceability.latestSalesOrder.customerId}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-slate-400">{t.rollNoSales}</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {(rollDetail.timeline || []).length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-slate-800 mb-4">{t.rollTimelineTitle}</h3>
+              <div className="space-y-4">
+                {(rollDetail.timeline || []).map((event, index) => (
+                  <div key={`${event.entityType}-${event.entityId}-${event.occurredAt}-${index}`} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="mt-1 h-3 w-3 rounded-full bg-indigo-500"></div>
+                      {index < (rollDetail.timeline || []).length - 1 && (
+                        <div className="mt-1 h-full min-h-10 w-px bg-slate-200"></div>
+                      )}
+                    </div>
+                    <div className="flex-1 rounded-lg border border-slate-100 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-slate-800">{event.title}</div>
+                        <div className="text-xs text-slate-400">{formatDate(event.occurredAt, lang)}</div>
+                      </div>
+                      {event.status && (
+                        <div className="mt-2"><StatusBadge status={event.status} /></div>
+                      )}
+                      {event.description && (
+                        <div className="mt-2 text-sm text-slate-500">{event.description}</div>
+                      )}
+                      <div className="mt-2 text-xs text-slate-400">{event.entityType} #{event.entityId}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* QC Reports */}
           {(qcReports || []).length > 0 && (

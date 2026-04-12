@@ -11,7 +11,7 @@ export const dyeingOrdersTable = pgTable("dyeing_orders", {
   dyehouseName: text("dyehouse_name").notNull(),
   targetColor: text("target_color").notNull(),
   targetShade: text("target_shade"),
-  status: text("status").notNull().default("PENDING"), // PENDING, SENT, IN_PROGRESS, COMPLETED, CANCELLED
+  status: text("status").notNull().default("PENDING"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   receivedAt: timestamp("received_at", { withTimezone: true }),
   notes: text("notes"),

@@ -21,6 +21,8 @@ export const plansQueryKeys = {
   admin: ["admin-plans"] as const,
   public: ["public-plans"] as const,
   currentSubscription: ["current-subscription"] as const,
+  billingSubscription: ["billing-subscription"] as const,
+  billingPaymentMethods: ["billing-payment-methods"] as const,
 };
 
 export function useAdminPlans() {
@@ -107,6 +109,8 @@ export function useSubscribePlan() {
     mutationFn: subscribePlan,
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: plansQueryKeys.currentSubscription });
+      await qc.invalidateQueries({ queryKey: plansQueryKeys.billingSubscription });
+      await qc.invalidateQueries({ queryKey: plansQueryKeys.billingPaymentMethods });
     },
   });
 }
@@ -117,6 +121,8 @@ export function useChangeSubscriptionPlan() {
     mutationFn: changeSubscriptionPlan,
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: plansQueryKeys.currentSubscription });
+      await qc.invalidateQueries({ queryKey: plansQueryKeys.billingSubscription });
+      await qc.invalidateQueries({ queryKey: plansQueryKeys.billingPaymentMethods });
     },
   });
 }
@@ -127,6 +133,7 @@ export function useCancelSubscription() {
     mutationFn: cancelSubscription,
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: plansQueryKeys.currentSubscription });
+      await qc.invalidateQueries({ queryKey: plansQueryKeys.billingSubscription });
     },
   });
 }

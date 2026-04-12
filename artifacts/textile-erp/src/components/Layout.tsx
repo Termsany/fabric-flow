@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { OperationalSearch } from "@/components/OperationalSearch";
+import { hasTenantFeatureAccess, isPlatformAdminRole, isTenantAdminRole } from "@/lib/roles";
 import {
   LayoutDashboard,
   ScrollText,
@@ -26,7 +28,7 @@ import {
 } from "lucide-react";
 
 const navItems = (t: ReturnType<typeof useLang>["t"], role: string) => [
-  ...(["super_admin", "support_admin", "billing_admin", "security_admin", "readonly_admin"].includes(role)
+  ...(isPlatformAdminRole(role)
     ? [
         { href: "/admin/tenants", label: t.tenants, icon: Building2 },
         ...(role === "billing_admin" || role === "readonly_admin" || role === "super_admin"
@@ -42,18 +44,18 @@ const navItems = (t: ReturnType<typeof useLang>["t"], role: string) => [
           : []),
       ]
     : [
-        { href: "/dashboard", label: t.dashboard, icon: LayoutDashboard },
-        { href: "/fabric-rolls", label: t.fabricRolls, icon: Package },
-        { href: "/production-orders", label: t.productionOrders, icon: ScrollText },
-        { href: "/qc", label: t.qualityControl, icon: CheckCircle },
-        { href: "/dyeing", label: t.dyeing, icon: Droplets },
-        { href: "/warehouses", label: t.warehouse, icon: Warehouse },
-        { href: "/sales", label: t.sales, icon: ShoppingCart },
-        ...(role === "admin" ? [{ href: "/subscription", label: t.subscriptionInfo, icon: CreditCard }] : []),
-        ...(role === "admin" ? [{ href: "/billing/pay", label: t.manualPayment, icon: Receipt }] : []),
+        ...(hasTenantFeatureAccess(role, "dashboard") ? [{ href: "/dashboard", label: t.dashboard, icon: LayoutDashboard }] : []),
+        ...(hasTenantFeatureAccess(role, "fabric_rolls") ? [{ href: "/fabric-rolls", label: t.fabricRolls, icon: Package }] : []),
+        ...(hasTenantFeatureAccess(role, "production") ? [{ href: "/production-orders", label: t.productionOrders, icon: ScrollText }] : []),
+        ...(hasTenantFeatureAccess(role, "qc") ? [{ href: "/qc", label: t.qualityControl, icon: CheckCircle }] : []),
+        ...(hasTenantFeatureAccess(role, "dyeing") ? [{ href: "/dyeing", label: t.dyeing, icon: Droplets }] : []),
+        ...(hasTenantFeatureAccess(role, "warehouse") ? [{ href: "/warehouses", label: t.warehouse, icon: Warehouse }] : []),
+        ...(hasTenantFeatureAccess(role, "sales") ? [{ href: "/sales", label: t.sales, icon: ShoppingCart }] : []),
+        ...(isTenantAdminRole(role) ? [{ href: "/subscription", label: t.subscriptionInfo, icon: CreditCard }] : []),
+        ...(isTenantAdminRole(role) ? [{ href: "/billing/pay", label: t.manualPayment, icon: Receipt }] : []),
         { href: "/profile/security", label: t.passwordSecurity, icon: Shield },
       ]),
-  ...(role === "admin"
+  ...(isTenantAdminRole(role)
     ? [
         { href: "/users", label: t.users, icon: Users },
         { href: "/audit-logs", label: t.auditLogs, icon: ClipboardList },
@@ -74,6 +76,7 @@ export function Layout({ children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const items = navItems(t, user?.role || "");
+  const showOperationalSearch = user?.role ? !isPlatformAdminRole(user.role) : false;
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -193,7 +196,14 @@ export function Layout({ children }: LayoutProps) {
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <div className="max-w-full p-4 sm:p-6">{children}</div>
+          <div className="max-w-full p-4 sm:p-6">
+            {showOperationalSearch && (
+              <div className="mb-5">
+                <OperationalSearch />
+              </div>
+            )}
+            {children}
+          </div>
         </main>
       </div>
     </div>

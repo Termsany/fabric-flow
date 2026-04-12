@@ -23,6 +23,9 @@ const JWT_CLOCK_TOLERANCE_SEC = Number(process.env.JWT_CLOCK_TOLERANCE_SEC || "1
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME?.trim() || "textile_erp_session";
 const AUTH_SESSION_MODE = (process.env.AUTH_SESSION_MODE?.trim().toLowerCase() || "bearer") as "bearer" | "cookie" | "hybrid";
 const AUTH_COOKIE_SECURE = process.env.NODE_ENV === "production";
+const AUTH_COOKIE_SAMESITE = (process.env.AUTH_COOKIE_SAMESITE?.trim().toLowerCase() || "lax") as "lax" | "strict" | "none";
+const AUTH_COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN?.trim() || undefined;
+const AUTH_COOKIE_PATH = process.env.AUTH_COOKIE_PATH?.trim() || "/";
 const AUTH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_TOKEN_LENGTH = 4096;
 
@@ -32,6 +35,14 @@ export interface JwtPayload {
   role: string;
   email: string;
 }
+
+export type TenantRole =
+  | "tenant_admin"
+  | "production_user"
+  | "dyeing_user"
+  | "qc_user"
+  | "warehouse_user"
+  | "sales_user";
 
 export type PlatformAdminRole =
   | "super_admin"
@@ -66,6 +77,24 @@ const PLATFORM_ADMIN_ROLES = new Set<PlatformAdminRole>([
   "security_admin",
   "readonly_admin",
 ]);
+
+const TENANT_ROLES = new Set<TenantRole>([
+  "tenant_admin",
+  "production_user",
+  "dyeing_user",
+  "qc_user",
+  "warehouse_user",
+  "sales_user",
+]);
+
+const TENANT_ROLE_ALIASES: Record<string, TenantRole> = {
+  admin: "tenant_admin",
+  production: "production_user",
+  dyeing: "dyeing_user",
+  qc: "qc_user",
+  warehouse: "warehouse_user",
+  sales: "sales_user",
+};
 
 const ADMIN_PERMISSIONS: Record<PlatformAdminRole, AdminPermission[]> = {
   super_admin: [
@@ -130,6 +159,20 @@ export async function verifySuperAdminCredentials(email: string, password: strin
 
 export function isPlatformAdminRole(role: string): role is PlatformAdminRole {
   return PLATFORM_ADMIN_ROLES.has(role as PlatformAdminRole);
+}
+
+export function normalizeTenantRole(role: string | null | undefined): TenantRole | null {
+  if (!role) {
+    return null;
+  }
+  if (TENANT_ROLES.has(role as TenantRole)) {
+    return role as TenantRole;
+  }
+  return TENANT_ROLE_ALIASES[role] ?? null;
+}
+
+export function isTenantRole(role: string): boolean {
+  return normalizeTenantRole(role) !== null;
 }
 
 export function hasAdminPermission(role: string, permission: AdminPermission): boolean {
@@ -242,6 +285,12 @@ export function shouldUseCookieSessions(): boolean {
   return AUTH_SESSION_MODE === "cookie" || AUTH_SESSION_MODE === "hybrid";
 }
 
+if (process.env.NODE_ENV === "production" && shouldUseCookieSessions()) {
+  if (AUTH_COOKIE_SAMESITE === "none" && !AUTH_COOKIE_SECURE) {
+    logger.warn("AUTH_COOKIE_SAMESITE=none requires HTTPS cookies; ensure TLS is enabled.");
+  }
+}
+
 export function getRequestAuthToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
@@ -265,9 +314,10 @@ export function attachSessionCookie(res: Response, token: string): void {
 
   res.cookie(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: AUTH_COOKIE_SAMESITE,
     secure: AUTH_COOKIE_SECURE,
-    path: "/",
+    domain: AUTH_COOKIE_DOMAIN,
+    path: AUTH_COOKIE_PATH,
     maxAge: AUTH_COOKIE_MAX_AGE_MS,
   });
 }
@@ -279,9 +329,10 @@ export function clearSessionCookie(res: Response): void {
 
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: AUTH_COOKIE_SAMESITE,
     secure: AUTH_COOKIE_SECURE,
-    path: "/",
+    domain: AUTH_COOKIE_DOMAIN,
+    path: AUTH_COOKIE_PATH,
   });
 }
 
@@ -339,7 +390,7 @@ export function requireTenantAdmin(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  if (req.user.role !== "admin") {
+  if (!isTenantAdminRole(req.user.role)) {
     res.status(403).json({ error: "Tenant admin access required" });
     return;
   }
@@ -348,11 +399,33 @@ export function requireTenantAdmin(req: Request, res: Response, next: NextFuncti
 }
 
 export function isTenantAdminRole(role: string): boolean {
-  return role === "admin";
+  return normalizeTenantRole(role) === "tenant_admin";
 }
 
 export function isSuperAdminRole(role: string): boolean {
   return role === "super_admin";
+}
+
+export function requireTenantRole(roles: TenantRole[], options?: { allowTenantAdmin?: boolean }) {
+  const allowed = new Set<TenantRole>(roles);
+  if (options?.allowTenantAdmin !== false) {
+    allowed.add("tenant_admin");
+  }
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const normalizedRole = normalizeTenantRole(req.user.role);
+    if (!normalizedRole || !allowed.has(normalizedRole)) {
+      res.status(403).json({ error: "Tenant role access required" });
+      return;
+    }
+
+    next();
+  };
 }
 
 export function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {

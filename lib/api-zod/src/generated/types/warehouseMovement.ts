@@ -17,6 +17,7 @@ export interface WarehouseMovement {
   movedById: number;
   /** @nullable */
   reason?: string | null;
+  movementType?: string;
   movedAt: string;
   createdAt: string;
 }

@@ -324,7 +324,7 @@ export function PlanFormModal({
                     <option value="EGP">EGP</option>
                   </select>
                   <div className="text-xs text-slate-500">
-                    {lang === "ar" ? "يمكنك اختيار USD أو EGP. سيتم حساب العملة المقابلة تلقائيًا." : "You can choose USD or EGP. The equivalent currency is calculated automatically."}
+                    {t.currencyHint}
                   </div>
                 </div>,
               )}

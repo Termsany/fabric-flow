@@ -1,7 +1,51 @@
-import { db, paymentMethodAuditLogsTable, usersTable } from "@workspace/db";
+import { auditLogsTable, db, paymentMethodAuditLogsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { Request } from "express";
-import { getSuperAdminUser, isPlatformAdminRole, findPlatformAdminByEmail } from "../lib/auth";
+import { getSuperAdminUser, isPlatformAdminRole, findPlatformAdminByEmail, isTenantRole } from "../lib/auth";
+
+type AuditValueMap = Record<string, unknown>;
+
+export function buildAuditChanges(input: {
+  before?: AuditValueMap | null;
+  after?: AuditValueMap | null;
+  context?: AuditValueMap | null;
+  reason?: string | null;
+}) {
+  return JSON.stringify({
+    before: input.before ?? null,
+    after: input.after ?? null,
+    context: input.context ?? {},
+    reason: input.reason ?? null,
+  });
+}
+
+export function pickAuditFields<T extends object>(source: T, fields: Array<keyof T>) {
+  return fields.reduce<AuditValueMap>((picked, field) => {
+    picked[String(field)] = source[field] ?? null;
+    return picked;
+  }, {});
+}
+
+export async function writeOperationalAuditLog(input: {
+  tenantId: number;
+  userId: number | null;
+  entityType: string;
+  entityId: number;
+  action: string;
+  before?: AuditValueMap | null;
+  after?: AuditValueMap | null;
+  context?: AuditValueMap | null;
+  reason?: string | null;
+}) {
+  await db.insert(auditLogsTable).values({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    changes: buildAuditChanges(input),
+  });
+}
 
 export async function writePaymentMethodAuditLog(input: {
   req: Request;
@@ -21,7 +65,7 @@ export async function writePaymentMethodAuditLog(input: {
     : null;
   let actorName = req.user?.email || "Unknown";
 
-  if (role === "admin" && actorUserId) {
+  if (isTenantRole(role) && actorUserId) {
     const [user] = await db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, actorUserId));
     actorName = user?.fullName || actorName;
   } else if (role === "super_admin") {

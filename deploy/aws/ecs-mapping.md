@@ -35,6 +35,14 @@ This project maps cleanly from `docker-compose.prod.yml` to AWS ECS services:
 ## Database Migrations
 
 - Run schema deployment before switching traffic:
-  - `node ./lib/db/run-drizzle.mjs push --config ./drizzle.config.ts`
+  - `pnpm run db:push:prod`
 
 For ECS, prefer a one-off release task or CI step rather than running bootstrap on every container start.
+
+## Safe Release Order
+
+1. Provision RDS (or managed Postgres).
+2. Configure Secrets Manager values (especially `DATABASE_URL`, `JWT_SECRET`, `APP_URL`).
+3. Run `pnpm run db:push:prod` as a one-off task.
+4. Deploy `backend`, wait for health.
+5. Deploy `frontend` after `VITE_API_URL` is correct.

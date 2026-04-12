@@ -68,6 +68,33 @@ export interface ProductionOrder {
   /** @nullable */
   notes?: string | null;
   rollsGenerated: number;
+  fabricRollIds?: number[];
+  linkedFabricRolls?: {
+    id: number;
+    rollCode: string;
+    status: string;
+    color?: string;
+    length?: number;
+    weight?: number;
+    warehouseId?: number | null;
+  }[];
+  workflow?: {
+    currentState: string;
+    rollCountsByStatus: Record<string, number>;
+    readiness: {
+      totalRolls: number;
+      readyForQc: number;
+      readyForDyeing: number;
+      readyForWarehouse: number;
+      readyForSales: number;
+      sold: number;
+    };
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +121,8 @@ export interface FabricRoll {
   productionOrderId: number;
   /** @nullable */
   warehouseId?: number | null;
+  /** @nullable */
+  warehouseLocationId?: number | null;
   length: number;
   weight: number;
   color: string;
@@ -104,6 +133,76 @@ export interface FabricRoll {
   qrCode: string;
   /** @nullable */
   notes?: string | null;
+  workflow?: {
+    currentStatus: string;
+    currentStage: string;
+    nextStep: {
+      /** @nullable */
+      action?: string | null;
+      /** @nullable */
+      description?: string | null;
+      /** @nullable */
+      route?: string | null;
+    };
+  };
+  traceability?: {
+    /** @nullable */
+    productionOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+    } | null;
+    /** @nullable */
+    currentWarehouse?: {
+      id: number;
+      name: string;
+      location: string;
+    } | null;
+    /** @nullable */
+    latestQc?: {
+      id: number;
+      result: string;
+      defectCount: number;
+      inspectedAt: string;
+      /** @nullable */
+      notes?: string | null;
+    } | null;
+    /** @nullable */
+    latestMovement?: {
+      id: number;
+      /** @nullable */
+      fromWarehouseId?: number | null;
+      /** @nullable */
+      toWarehouseId?: number | null;
+      movedAt: string;
+      /** @nullable */
+      reason?: string | null;
+    } | null;
+    /** @nullable */
+    latestDyeingOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      targetColor: string;
+    } | null;
+    /** @nullable */
+    latestSalesOrder?: {
+      id: number;
+      orderNumber: string;
+      status: string;
+      customerId: number;
+    } | null;
+  };
+  timeline?: {
+    occurredAt: string;
+    type: string;
+    title: string;
+    description?: string | null;
+    status?: string | null;
+    entityType: string;
+    entityId: number;
+    metadata?: Record<string, unknown>;
+  }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -130,8 +229,44 @@ export interface QcReport {
   /** @nullable */
   notes?: string | null;
   inspectedAt: string;
+  workflow?: {
+    result: string;
+    rollStatus: string;
+    downstreamEligible: boolean;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
+  traceability?: {
+    fabricRoll: {
+      id: number;
+      rollCode: string;
+      status: string;
+      productionOrderId: number;
+    };
+  };
   createdAt: string;
   updatedAt: string;
+}
+
+export type GetQcReportSummaryParams = {
+  from?: string;
+  to?: string;
+};
+
+export interface QcReportSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+  rework: number;
+  failureRate: number;
+  period: {
+    from?: string | null;
+    to?: string | null;
+  };
 }
 
 export interface CreateQcReportRequest {
@@ -166,6 +301,21 @@ export interface DyeingOrder {
   /** @nullable */
   notes?: string | null;
   rollIds: number[];
+  linkedFabricRolls?: {
+    id: number;
+    rollCode: string;
+    status: string;
+    color: string;
+  }[];
+  workflow?: {
+    currentState: string;
+    linkedRollCount: number;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -221,6 +371,7 @@ export interface WarehouseMovement {
   movedById: number;
   /** @nullable */
   reason?: string | null;
+  movementType?: string;
   movedAt: string;
   createdAt: string;
 }
@@ -276,6 +427,10 @@ export interface SalesOrder {
   /** @nullable */
   notes?: string | null;
   rollIds: number[];
+  stockSources?: {
+    fabricRollId: number;
+    warehouseId?: number | null;
+  }[];
   /** @nullable */
   invoiceNumber?: string | null;
   createdAt: string;
@@ -306,10 +461,31 @@ export interface DashboardStats {
   inStock: number;
   reserved: number;
   sold: number;
+  activeRolls: number;
   activeProductionOrders: number;
   activeDyeingOrders: number;
   pendingSalesOrders: number;
   totalCustomers: number;
+  qcOutcomes: {
+    total: number;
+    passed: number;
+    failed: number;
+    pending: number;
+    rework: number;
+  };
+  availableInventory: {
+    inStock: number;
+    reserved: number;
+    availableForSale: number;
+    warehouseStock: number;
+  };
+  salesSummary: {
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    totalRevenue: number;
+    deliveredRevenue: number;
+  };
 }
 
 export interface StatusCount {
@@ -460,13 +636,57 @@ export interface BillingSubscription {
   /** @nullable */
   lastInvoiceStatus: string | null;
   isActive: boolean;
+  statusSummary: {
+    state:
+      | "active"
+      | "trialing"
+      | "scheduled_cancel"
+      | "past_due"
+      | "unpaid"
+      | "incomplete"
+      | "canceled";
+    severity: "success" | "info" | "warning" | "danger";
+    hasAccess: boolean;
+    needsAttention: boolean;
+    isEndingSoon: boolean;
+    nextRelevantAt: string | null;
+    nextRelevantType: "trial_end" | "renewal" | "cancellation" | null;
+    lastInvoiceStatus: string | null;
+  };
   usage: BillingUsage;
   limits: BillingLimits;
   plans: BillingPlanDetails[];
+  manualPayment: {
+    amount: number;
+    amountUsd: number;
+    localAmountEgp: number;
+    baseCurrency: "USD" | "EGP";
+    localCurrency: "EGP";
+    usdExchangeRate: number;
+    interval: "monthly" | "yearly";
+    instructions: {
+      currency: string;
+      instapay: {
+        account: string;
+        note: string;
+      };
+      vodafoneCash: {
+        number: string;
+        note: string;
+      };
+    };
+    methods: Array<{
+      method: "instapay" | "vodafone_cash";
+      accountNumber: string;
+      accountName: string;
+      instructionsAr: string;
+    }>;
+  };
 }
 
 export type ListProductionOrdersParams = {
   status?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 };
@@ -491,6 +711,7 @@ export type ListQcReportsParams = {
 
 export type ListDyeingOrdersParams = {
   status?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 };
@@ -498,9 +719,47 @@ export type ListDyeingOrdersParams = {
 export type ListWarehouseMovementsParams = {
   fabricRollId?: number;
   warehouseId?: number;
+  search?: string;
   limit?: number;
   offset?: number;
 };
+
+export type GetInventoryReportParams = {
+  lowStockThreshold?: number;
+};
+
+export type InventoryReportStatusCount = {
+  status: string;
+  count: number;
+};
+
+export type InventoryReportWarehouseStock = {
+  warehouseId: number;
+  name: string;
+  location: string;
+  capacity?: number | null;
+  currentStock: number;
+};
+
+export interface InventoryReport {
+  totalRolls: number;
+  activeRolls: number;
+  currentStock: number;
+  availableForSale: number;
+  reserved: number;
+  sold: number;
+  byStatus: InventoryReportStatusCount[];
+  readiness: {
+    inProduction: number;
+    awaitingQc: number;
+    readyForDyeing: number;
+    readyForWarehouse: number;
+    availableForSale: number;
+    blocked: number;
+  };
+  lowStockCandidates: Array<InventoryReportWarehouseStock & { threshold: number }>;
+  byWarehouse: InventoryReportWarehouseStock[];
+}
 
 export type ListCustomersParams = {
   search?: string;
@@ -511,9 +770,45 @@ export type ListCustomersParams = {
 export type ListSalesOrdersParams = {
   status?: string;
   customerId?: number;
+  search?: string;
   limit?: number;
   offset?: number;
 };
+
+export type GetSalesReportParams = {
+  recentLimit?: number;
+};
+
+export type SalesReportStatusCount = {
+  status: string;
+  count: number;
+};
+
+export type SalesReportRecentSale = {
+  id: number;
+  orderNumber: string;
+  customerId: number;
+  status: string;
+  totalAmount: number;
+  rollCount: number;
+  invoiceNumber?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface SalesReport {
+  totalSalesCount: number;
+  deliveredSalesCount: number;
+  pendingSalesCount: number;
+  recordedTotalAmount: number;
+  volume: {
+    totalRollsAllocated: number;
+    deliveredRolls: number;
+    averageRollsPerSale: number;
+  };
+  byStatus: SalesReportStatusCount[];
+  recentSales: SalesReportRecentSale[];
+}
 
 export type GetRecentActivityParams = {
   limit?: number;

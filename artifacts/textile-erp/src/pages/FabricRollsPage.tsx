@@ -4,14 +4,10 @@ import { useLang } from "@/contexts/LangContext";
 import { Layout } from "@/components/Layout";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FABRIC_ROLL_STATUSES } from "@/lib/workflow-statuses";
 import { useListFabricRolls, useUpdateFabricRoll, getListFabricRollsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Search, Filter, Eye } from "lucide-react";
-
-const ROLL_STATUSES = [
-  "CREATED", "IN_PRODUCTION", "QC_PENDING", "QC_PASSED", "QC_FAILED",
-  "SENT_TO_DYEING", "IN_DYEING", "FINISHED", "IN_STOCK", "RESERVED", "SOLD",
-];
 
 export function FabricRollsPage() {
   const { t } = useLang();
@@ -57,7 +53,7 @@ export function FabricRollsPage() {
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">{t.all}</option>
-            {ROLL_STATUSES.map((s) => (
+            {FABRIC_ROLL_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {(t as unknown as Record<string, string>)[s] || s}
               </option>
@@ -99,7 +95,13 @@ export function FabricRollsPage() {
               ) : (rolls || []).length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
-                    {t.noRolls}
+                    <div className="flex flex-col items-center gap-2">
+                      <div>{t.noRolls}</div>
+                      <div className="text-xs text-slate-500">{t.emptyFabricRollsHint}</div>
+                      <Link href="/production-orders" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                        {t.emptyFabricRollsCta}
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ) : (

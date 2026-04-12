@@ -19,6 +19,24 @@ export interface QcReport {
   /** @nullable */
   notes?: string | null;
   inspectedAt: string;
+  workflow?: {
+    result: string;
+    rollStatus: string;
+    downstreamEligible: boolean;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
+  traceability?: {
+    fabricRoll: {
+      id: number;
+      rollCode: string;
+      status: string;
+      productionOrderId: number;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }

@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAdminPlans } from "@/hooks/use-plans";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { resetTenantUserPasswordBySuperAdmin } from "@/lib/password";
+import { hasPlatformAdminPermission } from "@/lib/roles";
 import {
   adminTenantQueryKeys,
   extendAdminTenantTrial,
@@ -29,28 +30,29 @@ import {
   type AdminTenantPaymentMethod,
 } from "@/lib/admin-tenants";
 
-function formatPlanLabel(plan: string, lang: string, planNames?: Map<string, { ar: string; en: string }>) {
+function formatPlanLabel(
+  plan: string,
+  lang: string,
+  t: ReturnType<typeof useLang>["t"],
+  planNames?: Map<string, { ar: string; en: string }>,
+) {
   const customPlan = planNames?.get(plan);
   if (customPlan) {
     return lang === "ar" ? customPlan.ar : customPlan.en;
   }
 
-  if (lang === "ar") {
-    if (plan === "pro") return "برو";
-    if (plan === "enterprise") return "الخطة المفتوحة";
-    return "أساسية";
-  }
-
-  if (plan === "pro") return "Pro";
-  if (plan === "enterprise") return "Open Plan";
-  return "Basic";
+  if (plan === "pro") return t.planPro;
+  if (plan === "enterprise") return t.planEnterprise;
+  return t.planBasic;
 }
 
 function BillingStatusSelect({
+  t,
   value,
   onChange,
   disabled = false,
 }: {
+  t: ReturnType<typeof useLang>["t"];
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -62,12 +64,12 @@ function BillingStatusSelect({
       onChange={(event) => onChange(event.target.value)}
       className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <option value="trialing">Trialing</option>
-      <option value="active">Active</option>
-      <option value="past_due">Past Due</option>
-      <option value="canceled">Canceled</option>
-      <option value="unpaid">Unpaid</option>
-      <option value="incomplete">Incomplete</option>
+      <option value="trialing">{t.billingStatusTrialing}</option>
+      <option value="active">{t.billingStatusActive}</option>
+      <option value="past_due">{t.billingStatusPastDue}</option>
+      <option value="canceled">{t.billingStatusCanceled}</option>
+      <option value="unpaid">{t.billingStatusUnpaid}</option>
+      <option value="incomplete">{t.billingStatusIncomplete}</option>
     </select>
   );
 }
@@ -102,12 +104,13 @@ export function AdminTenantDetailPage() {
     { key: "permissions", label: t.permissions },
     { key: "usage", label: t.usageStats },
     { key: "logs", label: t.activityTimeline },
-    { key: "billing", label: t.billing },
-  ], [t]);
-  const canManageTenant = user?.role === "super_admin" || user?.role === "support_admin";
-  const canManageBilling = user?.role === "super_admin";
+    ...(hasPlatformAdminPermission(user?.role, "billing.read") ? [{ key: "billing", label: t.billing }] : []),
+  ], [t, user?.role]);
+  const canManageTenant = hasPlatformAdminPermission(user?.role, "tenants.write");
+  const canManageBilling = hasPlatformAdminPermission(user?.role, "billing.write");
+  const canReadBilling = hasPlatformAdminPermission(user?.role, "billing.read");
   const canResetCompanyPassword = user?.role === "super_admin";
-  const canImpersonate = canManageTenant;
+  const canImpersonate = hasPlatformAdminPermission(user?.role, "tenants.impersonate");
   const planNames = useMemo(
     () =>
       new Map(
@@ -131,7 +134,7 @@ export function AdminTenantDetailPage() {
   }, [t, tenantQuery.error]);
 
   useEffect(() => {
-    if (activeTab !== "billing" || !Number.isFinite(tenantId) || tenantId <= 0) return;
+    if (!canReadBilling || activeTab !== "billing" || !Number.isFinite(tenantId) || tenantId <= 0) return;
     let cancelled = false;
     setPaymentMethodsLoading(true);
     void getAdminTenantPaymentMethods(tenantId)
@@ -148,7 +151,7 @@ export function AdminTenantDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, tenantId, t]);
+  }, [activeTab, canReadBilling, tenantId, t]);
 
   const applyAction = async (action: () => Promise<unknown>, successMessage?: string) => {
     setIsUpdating(true);
@@ -300,7 +303,7 @@ export function AdminTenantDetailPage() {
             <AdminMetricCard label={t.users} value={formatNumber(tenant.usage.usersCount, lang)} />
             <AdminMetricCard label={t.activeUsers} value={formatNumber(tenant.usage.activeUsersCount, lang)} tone="success" />
             <AdminMetricCard label={t.fabricRolls} value={formatNumber(tenant.usage.rollsCount, lang)} tone="primary" />
-            <AdminMetricCard label={t.currentPlan} value={formatPlanLabel(tenant.currentPlan, lang, planNames)} tone="warning" />
+            <AdminMetricCard label={t.currentPlan} value={formatPlanLabel(tenant.currentPlan, lang, t, planNames)} tone="warning" />
           </div>
 
           <AdminTabs items={tabs} value={activeTab} onChange={setActiveTab} />
@@ -314,8 +317,11 @@ export function AdminTenantDetailPage() {
                     { label: t.status, value: tenant.isActive ? t.active : t.inactive },
                     { label: t.createdAt, value: formatDate(tenant.createdAt, lang) },
                     { label: t.company, value: tenant.country },
-                    { label: t.plan, value: formatPlanLabel(tenant.currentPlan, lang, planNames) },
-                    { label: t.subscriptionStatus, value: tenant.billingStatus },
+                    { label: t.plan, value: formatPlanLabel(tenant.currentPlan, lang, t, planNames) },
+                    {
+                      label: t.subscriptionStatus,
+                      value: (t as unknown as Record<string, string>)[tenant.billingStatus] || tenant.billingStatus,
+                    },
                   ].map((item) => (
                     <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                       <div className="text-xs text-slate-500">{item.label}</div>
@@ -497,7 +503,7 @@ export function AdminTenantDetailPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs text-slate-500">{t.currentPlan}</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">{formatPlanLabel(tenant.currentPlan, lang)}</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-900">{formatPlanLabel(tenant.currentPlan, lang, t)}</div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs text-slate-500">{t.subscriptionStatus}</div>
@@ -653,6 +659,7 @@ export function AdminTenantDetailPage() {
                       <div className="text-xs text-slate-500">{t.subscriptionStatus}</div>
                       <div className="flex flex-wrap items-center gap-2">
                         <BillingStatusSelect
+                          t={t}
                           value={tenant.billingStatus}
                           disabled={isUpdating || !canManageBilling}
                           onChange={(value) => void applyAction(() => updateAdminTenantBillingStatus(tenant.id, value), t.billingStatusUpdated)}

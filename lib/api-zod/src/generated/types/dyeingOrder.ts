@@ -22,6 +22,21 @@ export interface DyeingOrder {
   /** @nullable */
   notes?: string | null;
   rollIds: number[];
+  linkedFabricRolls?: {
+    id: number;
+    rollCode: string;
+    status: string;
+    color: string;
+  }[];
+  workflow?: {
+    currentState: string;
+    linkedRollCount: number;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }

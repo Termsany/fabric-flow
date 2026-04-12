@@ -9,6 +9,7 @@
 export type ListSalesOrdersParams = {
   status?: string;
   customerId?: number;
+  search?: string;
   limit?: number;
   offset?: number;
 };

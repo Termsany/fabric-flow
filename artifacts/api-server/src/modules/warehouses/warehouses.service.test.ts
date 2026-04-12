@@ -67,6 +67,8 @@ test("warehousesService.createWarehouseMovement creates a movement and updates t
           userId: payload.userId,
         });
       },
+      listInventoryStatusCounts: async () => [],
+      listWarehouseStock: async () => [],
     },
     ensureUsageWithinLimit: async () => ({ allowed: true, limit: 5, current: 1 }),
   });
@@ -99,6 +101,8 @@ test("warehousesService.createWarehouse blocks creation when the tenant has reac
       createWarehouseMovement: async () => [],
       updateFabricRollWarehouse: async () => undefined,
       insertAuditLog: async () => undefined,
+      listInventoryStatusCounts: async () => [],
+      listWarehouseStock: async () => [],
     },
     ensureUsageWithinLimit: async () => ({ allowed: false, limit: 1, current: 1 }),
   });

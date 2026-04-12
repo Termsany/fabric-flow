@@ -140,6 +140,7 @@ export const DeleteUserParams = zod.object({
  */
 export const ListProductionOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
   offset: zod.coerce.number().optional(),
 });
@@ -156,6 +157,33 @@ export const ListProductionOrdersResponseItem = zod.object({
   status: zod.string(),
   notes: zod.string().nullish(),
   rollsGenerated: zod.number(),
+  fabricRollIds: zod.array(zod.number()).optional(),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string().optional(),
+    length: zod.number().optional(),
+    weight: zod.number().optional(),
+    warehouseId: zod.number().nullable().optional(),
+  })).optional(),
+  workflow: zod.object({
+    currentState: zod.string(),
+    rollCountsByStatus: zod.record(zod.string(), zod.number()),
+    readiness: zod.object({
+      totalRolls: zod.number(),
+      readyForQc: zod.number(),
+      readyForDyeing: zod.number(),
+      readyForWarehouse: zod.number(),
+      readyForSales: zod.number(),
+      sold: zod.number(),
+    }),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -194,6 +222,33 @@ export const GetProductionOrderResponse = zod.object({
   status: zod.string(),
   notes: zod.string().nullish(),
   rollsGenerated: zod.number(),
+  fabricRollIds: zod.array(zod.number()),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string(),
+    length: zod.number(),
+    weight: zod.number(),
+    warehouseId: zod.number().nullable(),
+  })),
+  workflow: zod.object({
+    currentState: zod.string(),
+    rollCountsByStatus: zod.record(zod.string(), zod.number()),
+    readiness: zod.object({
+      totalRolls: zod.number(),
+      readyForQc: zod.number(),
+      readyForDyeing: zod.number(),
+      readyForWarehouse: zod.number(),
+      readyForSales: zod.number(),
+      sold: zod.number(),
+    }),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -222,6 +277,33 @@ export const UpdateProductionOrderResponse = zod.object({
   status: zod.string(),
   notes: zod.string().nullish(),
   rollsGenerated: zod.number(),
+  fabricRollIds: zod.array(zod.number()),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string(),
+    length: zod.number(),
+    weight: zod.number(),
+    warehouseId: zod.number().nullable(),
+  })),
+  workflow: zod.object({
+    currentState: zod.string(),
+    rollCountsByStatus: zod.record(zod.string(), zod.number()),
+    readiness: zod.object({
+      totalRolls: zod.number(),
+      readyForQc: zod.number(),
+      readyForDyeing: zod.number(),
+      readyForWarehouse: zod.number(),
+      readyForSales: zod.number(),
+      sold: zod.number(),
+    }),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -247,6 +329,7 @@ export const ListFabricRollsResponseItem = zod.object({
   batchId: zod.string(),
   productionOrderId: zod.number(),
   warehouseId: zod.number().nullish(),
+  warehouseLocationId: zod.number().nullish().optional(),
   length: zod.number(),
   weight: zod.number(),
   color: zod.string(),
@@ -260,6 +343,66 @@ export const ListFabricRollsResponseItem = zod.object({
   updatedAt: zod.string(),
 });
 export const ListFabricRollsResponse = zod.array(ListFabricRollsResponseItem);
+
+const FabricRollWorkflowSummary = zod.object({
+  currentStatus: zod.string(),
+  currentStage: zod.string(),
+  nextStep: zod.object({
+    action: zod.string().nullable(),
+    description: zod.string().nullable(),
+    route: zod.string().nullable(),
+  }),
+});
+
+const FabricRollTraceability = zod.object({
+  productionOrder: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    status: zod.string(),
+  }).nullable(),
+  currentWarehouse: zod.object({
+    id: zod.number(),
+    name: zod.string(),
+    location: zod.string(),
+  }).nullable(),
+  latestQc: zod.object({
+    id: zod.number(),
+    result: zod.string(),
+    defectCount: zod.number(),
+    inspectedAt: zod.string(),
+    notes: zod.string().nullable(),
+  }).nullable(),
+  latestMovement: zod.object({
+    id: zod.number(),
+    fromWarehouseId: zod.number().nullable(),
+    toWarehouseId: zod.number().nullable(),
+    movedAt: zod.string(),
+    reason: zod.string().nullable(),
+  }).nullable(),
+  latestDyeingOrder: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    status: zod.string(),
+    targetColor: zod.string(),
+  }).nullable(),
+  latestSalesOrder: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    status: zod.string(),
+    customerId: zod.number(),
+  }).nullable(),
+});
+
+const FabricRollTimelineEvent = zod.object({
+  occurredAt: zod.string(),
+  type: zod.string(),
+  title: zod.string(),
+  description: zod.string().nullable(),
+  status: zod.string().nullable(),
+  entityType: zod.string(),
+  entityId: zod.number(),
+  metadata: zod.record(zod.string(), zod.unknown()).optional(),
+});
 
 /**
  * @summary Get fabric roll
@@ -275,6 +418,7 @@ export const GetFabricRollResponse = zod.object({
   batchId: zod.string(),
   productionOrderId: zod.number(),
   warehouseId: zod.number().nullish(),
+  warehouseLocationId: zod.number().nullish(),
   length: zod.number(),
   weight: zod.number(),
   color: zod.string(),
@@ -284,6 +428,9 @@ export const GetFabricRollResponse = zod.object({
   status: zod.string(),
   qrCode: zod.string(),
   notes: zod.string().nullish(),
+  workflow: FabricRollWorkflowSummary,
+  traceability: FabricRollTraceability,
+  timeline: zod.array(FabricRollTimelineEvent).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -311,6 +458,7 @@ export const UpdateFabricRollResponse = zod.object({
   batchId: zod.string(),
   productionOrderId: zod.number(),
   warehouseId: zod.number().nullish(),
+  warehouseLocationId: zod.number().nullish(),
   length: zod.number(),
   weight: zod.number(),
   color: zod.string(),
@@ -320,6 +468,9 @@ export const UpdateFabricRollResponse = zod.object({
   status: zod.string(),
   qrCode: zod.string(),
   notes: zod.string().nullish(),
+  workflow: FabricRollWorkflowSummary,
+  traceability: FabricRollTraceability,
+  timeline: zod.array(FabricRollTimelineEvent).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -338,6 +489,7 @@ export const GetFabricRollByCodeResponse = zod.object({
   batchId: zod.string(),
   productionOrderId: zod.number(),
   warehouseId: zod.number().nullish(),
+  warehouseLocationId: zod.number().nullish(),
   length: zod.number(),
   weight: zod.number(),
   color: zod.string(),
@@ -347,6 +499,9 @@ export const GetFabricRollByCodeResponse = zod.object({
   status: zod.string(),
   qrCode: zod.string(),
   notes: zod.string().nullish(),
+  workflow: FabricRollWorkflowSummary,
+  traceability: FabricRollTraceability,
+  timeline: zod.array(FabricRollTimelineEvent).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -361,6 +516,47 @@ export const ListQcReportsQueryParams = zod.object({
   offset: zod.coerce.number().optional(),
 });
 
+/**
+ * @summary Get QC reporting summary
+ */
+export const GetQcReportSummaryQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
+export const GetQcReportSummaryResponse = zod.object({
+  total: zod.number(),
+  passed: zod.number(),
+  failed: zod.number(),
+  pending: zod.number(),
+  rework: zod.number(),
+  failureRate: zod.number(),
+  period: zod.object({
+    from: zod.string().nullable(),
+    to: zod.string().nullable(),
+  }),
+});
+
+const QcReportWorkflow = zod.object({
+  result: zod.string(),
+  rollStatus: zod.string(),
+  downstreamEligible: zod.boolean(),
+  nextStep: zod.object({
+    action: zod.string().nullable(),
+    description: zod.string().nullable(),
+    route: zod.string().nullable(),
+  }),
+});
+
+const QcReportTraceability = zod.object({
+  fabricRoll: zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    productionOrderId: zod.number(),
+  }),
+});
+
 export const ListQcReportsResponseItem = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
@@ -372,6 +568,8 @@ export const ListQcReportsResponseItem = zod.object({
   images: zod.array(zod.string()),
   notes: zod.string().nullish(),
   inspectedAt: zod.string(),
+  workflow: QcReportWorkflow.optional(),
+  traceability: QcReportTraceability.optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -407,6 +605,8 @@ export const GetQcReportResponse = zod.object({
   images: zod.array(zod.string()),
   notes: zod.string().nullish(),
   inspectedAt: zod.string(),
+  workflow: QcReportWorkflow.optional(),
+  traceability: QcReportTraceability.optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -436,6 +636,8 @@ export const UpdateQcReportResponse = zod.object({
   images: zod.array(zod.string()),
   notes: zod.string().nullish(),
   inspectedAt: zod.string(),
+  workflow: QcReportWorkflow.optional(),
+  traceability: QcReportTraceability.optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -445,6 +647,7 @@ export const UpdateQcReportResponse = zod.object({
  */
 export const ListDyeingOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
   offset: zod.coerce.number().optional(),
 });
@@ -461,6 +664,21 @@ export const ListDyeingOrdersResponseItem = zod.object({
   receivedAt: zod.string().nullish(),
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string(),
+  })).optional(),
+  workflow: zod.object({
+    currentState: zod.string(),
+    linkedRollCount: zod.number(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -496,6 +714,21 @@ export const GetDyeingOrderResponse = zod.object({
   receivedAt: zod.string().nullish(),
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string(),
+  })),
+  workflow: zod.object({
+    currentState: zod.string(),
+    linkedRollCount: zod.number(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -526,8 +759,65 @@ export const UpdateDyeingOrderResponse = zod.object({
   receivedAt: zod.string().nullish(),
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
+  linkedFabricRolls: zod.array(zod.object({
+    id: zod.number(),
+    rollCode: zod.string(),
+    status: zod.string(),
+    color: zod.string(),
+  })),
+  workflow: zod.object({
+    currentState: zod.string(),
+    linkedRollCount: zod.number(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+  }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+});
+
+/**
+ * @summary List warehouses
+ */
+export const GetInventoryReportQueryParams = zod.object({
+  lowStockThreshold: zod.coerce.number().optional(),
+});
+
+const InventoryReportStatusCount = zod.object({
+  status: zod.string(),
+  count: zod.number(),
+});
+
+const InventoryReportWarehouseStock = zod.object({
+  warehouseId: zod.number(),
+  name: zod.string(),
+  location: zod.string(),
+  capacity: zod.number().nullable(),
+  currentStock: zod.number(),
+});
+
+export const GetInventoryReportResponse = zod.object({
+  totalRolls: zod.number(),
+  activeRolls: zod.number(),
+  currentStock: zod.number(),
+  availableForSale: zod.number(),
+  reserved: zod.number(),
+  sold: zod.number(),
+  byStatus: zod.array(InventoryReportStatusCount),
+  readiness: zod.object({
+    inProduction: zod.number(),
+    awaitingQc: zod.number(),
+    readyForDyeing: zod.number(),
+    readyForWarehouse: zod.number(),
+    availableForSale: zod.number(),
+    blocked: zod.number(),
+  }),
+  lowStockCandidates: zod.array(InventoryReportWarehouseStock.extend({
+    threshold: zod.number(),
+  })),
+  byWarehouse: zod.array(InventoryReportWarehouseStock),
 });
 
 /**
@@ -603,6 +893,7 @@ export const UpdateWarehouseResponse = zod.object({
 export const ListWarehouseMovementsQueryParams = zod.object({
   fabricRollId: zod.coerce.number().optional(),
   warehouseId: zod.coerce.number().optional(),
+  search: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
   offset: zod.coerce.number().optional(),
 });
@@ -615,6 +906,7 @@ export const ListWarehouseMovementsResponseItem = zod.object({
   toWarehouseId: zod.number().nullish(),
   movedById: zod.number(),
   reason: zod.string().nullish(),
+  movementType: zod.string().optional(),
   movedAt: zod.string(),
   createdAt: zod.string(),
 });
@@ -721,6 +1013,7 @@ export const UpdateCustomerResponse = zod.object({
 export const ListSalesOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   customerId: zod.coerce.number().optional(),
+  search: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
   offset: zod.coerce.number().optional(),
 });
@@ -739,6 +1032,49 @@ export const ListSalesOrdersResponseItem = zod.object({
   updatedAt: zod.string(),
 });
 export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem);
+
+/**
+ * @summary Get sales reporting summary
+ */
+export const GetSalesReportQueryParams = zod.object({
+  recentLimit: zod.coerce.number().optional(),
+});
+
+const SalesReportStatusCount = zod.object({
+  status: zod.string(),
+  count: zod.number(),
+});
+
+const SalesReportRecentSale = zod.object({
+  id: zod.number(),
+  orderNumber: zod.string(),
+  customerId: zod.number(),
+  status: zod.string(),
+  totalAmount: zod.number(),
+  rollCount: zod.number(),
+  invoiceNumber: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const GetSalesReportResponse = zod.object({
+  totalSalesCount: zod.number(),
+  deliveredSalesCount: zod.number(),
+  pendingSalesCount: zod.number(),
+  recordedTotalAmount: zod.number(),
+  volume: zod.object({
+    totalRollsAllocated: zod.number(),
+    deliveredRolls: zod.number(),
+    averageRollsPerSale: zod.number(),
+  }),
+  byStatus: zod.array(SalesReportStatusCount),
+  recentSales: zod.array(SalesReportRecentSale),
+});
+
+const SalesOrderStockSource = zod.object({
+  fabricRollId: zod.number(),
+  warehouseId: zod.number().nullable(),
+});
 
 /**
  * @summary Create sales order
@@ -766,6 +1102,7 @@ export const GetSalesOrderResponse = zod.object({
   totalAmount: zod.number(),
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
+  stockSources: zod.array(SalesOrderStockSource).optional(),
   invoiceNumber: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -794,6 +1131,7 @@ export const UpdateSalesOrderResponse = zod.object({
   totalAmount: zod.number(),
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
+  stockSources: zod.array(SalesOrderStockSource).optional(),
   invoiceNumber: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -812,10 +1150,31 @@ export const GetDashboardStatsResponse = zod.object({
   inStock: zod.number(),
   reserved: zod.number(),
   sold: zod.number(),
+  activeRolls: zod.number(),
   activeProductionOrders: zod.number(),
   activeDyeingOrders: zod.number(),
   pendingSalesOrders: zod.number(),
   totalCustomers: zod.number(),
+  qcOutcomes: zod.object({
+    total: zod.number(),
+    passed: zod.number(),
+    failed: zod.number(),
+    pending: zod.number(),
+    rework: zod.number(),
+  }),
+  availableInventory: zod.object({
+    inStock: zod.number(),
+    reserved: zod.number(),
+    availableForSale: zod.number(),
+    warehouseStock: zod.number(),
+  }),
+  salesSummary: zod.object({
+    totalOrders: zod.number(),
+    pendingOrders: zod.number(),
+    deliveredOrders: zod.number(),
+    totalRevenue: zod.number(),
+    deliveredRevenue: zod.number(),
+  }),
 });
 
 /**
@@ -906,6 +1265,21 @@ export const GetBillingSubscriptionResponse = zod.object({
   trialEndsAt: zod.string().nullable(),
   lastInvoiceStatus: zod.string().nullable(),
   isActive: zod.boolean(),
+  statusSummary: zod.object({
+    state: zod.enum(["active", "trialing", "scheduled_cancel", "past_due", "unpaid", "incomplete", "canceled"]),
+    severity: zod.enum(["success", "info", "warning", "danger"]),
+    hasAccess: zod.boolean(),
+    needsAttention: zod.boolean(),
+    isEndingSoon: zod.boolean(),
+    nextRelevantAt: zod.string().nullable(),
+    nextRelevantType: zod.union([
+      zod.literal("trial_end"),
+      zod.literal("renewal"),
+      zod.literal("cancellation"),
+      zod.literal(null),
+    ]).nullable(),
+    lastInvoiceStatus: zod.string().nullable(),
+  }),
   usage: zod.object({
     users: zod.number(),
     warehouses: zod.number(),
@@ -923,6 +1297,32 @@ export const GetBillingSubscriptionResponse = zod.object({
       features: zod.array(zod.string()),
     }),
   ),
+  manualPayment: zod.object({
+    amount: zod.number(),
+    amountUsd: zod.number(),
+    localAmountEgp: zod.number(),
+    baseCurrency: zod.enum(["USD", "EGP"]),
+    localCurrency: zod.literal("EGP"),
+    usdExchangeRate: zod.number(),
+    interval: zod.enum(["monthly", "yearly"]),
+    instructions: zod.object({
+      currency: zod.string(),
+      instapay: zod.object({
+        account: zod.string(),
+        note: zod.string(),
+      }),
+      vodafoneCash: zod.object({
+        number: zod.string(),
+        note: zod.string(),
+      }),
+    }),
+    methods: zod.array(zod.object({
+      method: zod.enum(["instapay", "vodafone_cash"]),
+      accountNumber: zod.string(),
+      accountName: zod.string(),
+      instructionsAr: zod.string(),
+    })),
+  }),
 });
 
 /**

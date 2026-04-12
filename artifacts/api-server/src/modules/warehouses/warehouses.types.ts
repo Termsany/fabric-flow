@@ -1,12 +1,15 @@
 import { ensureUsageWithinLimit } from "../../lib/billing";
+import { inferInventoryOperation } from "./warehouses.inventory";
 import {
   type AuditLogInsert,
   type FabricRollRow,
+  type WarehouseStockRow,
   type WarehouseInsert,
   type WarehouseMovementInsert,
   type WarehouseMovementRow,
   type WarehouseRow,
 } from "./warehouses.repository";
+import type { InventoryStatusCount } from "./warehouses.reporting";
 
 export function formatWarehouse(w: WarehouseRow) {
   return {
@@ -30,6 +33,7 @@ export function formatMovement(m: WarehouseMovementRow) {
     toWarehouseId: m.toWarehouseId ?? null,
     movedById: m.movedById,
     reason: m.reason ?? null,
+    movementType: inferInventoryOperation(m),
     movedAt: m.movedAt.toISOString(),
     createdAt: m.createdAt.toISOString(),
   };
@@ -43,12 +47,14 @@ export type WarehousesServiceDependencies = {
     updateWarehouse: (tenantId: number, id: number, updates: Record<string, unknown>) => Promise<WarehouseRow[]>;
     listWarehouseMovements: (
       tenantId: number,
-      options: { fabricRollId?: number; warehouseId?: number; limit: number; offset: number },
+      options: { fabricRollId?: number; warehouseId?: number; search?: string; limit: number; offset: number },
     ) => Promise<WarehouseMovementRow[]>;
     findFabricRollById: (tenantId: number, id: number) => Promise<FabricRollRow[]>;
     createWarehouseMovement: (values: WarehouseMovementInsert) => Promise<WarehouseMovementRow[]>;
     updateFabricRollWarehouse: (tenantId: number, fabricRollId: number, warehouseId: number | null) => Promise<unknown>;
     insertAuditLog: (values: AuditLogInsert) => Promise<unknown>;
+    listInventoryStatusCounts: (tenantId: number) => Promise<InventoryStatusCount[]>;
+    listWarehouseStock: (tenantId: number) => Promise<WarehouseStockRow[]>;
   };
   ensureUsageWithinLimit: typeof ensureUsageWithinLimit;
 };
@@ -56,6 +62,7 @@ export type WarehousesServiceDependencies = {
 export type {
   AuditLogInsert,
   FabricRollRow,
+  WarehouseStockRow,
   WarehouseInsert,
   WarehouseMovementInsert,
   WarehouseMovementRow,

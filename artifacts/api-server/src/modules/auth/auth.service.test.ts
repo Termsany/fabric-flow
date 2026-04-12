@@ -43,7 +43,7 @@ function createAppUser(overrides: Partial<TestUserRow> = {}): TestUserRow {
     email: "user@example.com",
     passwordHash: "hash:user",
     fullName: "User Example",
-    role: "admin",
+    role: "tenant_admin",
     isActive: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -128,7 +128,7 @@ function createAuthDeps(options?: {
             tenantId: 2,
             email: "owner@example.com",
             fullName: "Owner",
-            role: "admin",
+            role: "tenant_admin",
             isActive: true,
             createdAt: new Date("2026-01-01T00:00:00.000Z"),
             updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -155,7 +155,7 @@ function createAuthDeps(options?: {
                 tenantId: 2,
                 email: "owner@example.com",
                 fullName: "Owner",
-                role: "admin",
+                role: "tenant_admin",
                 isActive: true,
                 createdAt: new Date("2026-01-01T00:00:00.000Z"),
                 updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -389,7 +389,7 @@ test("authService.changePassword rejects weak passwords before persistence", asy
   const { service, calls } = createAuthDeps();
 
   const result = await service.changePassword(
-    { userId: 7, tenantId: 2, role: "admin", email: "user@example.com" },
+    { userId: 7, tenantId: 2, role: "tenant_admin", email: "user@example.com" },
     { ip: "127.0.0.1" },
     { currentPassword: "Current123", newPassword: "weak" },
   );
@@ -428,7 +428,7 @@ test("authService.changePassword updates app user passwords through the app-user
   const { service, calls } = createAuthDeps();
 
   const result = await service.changePassword(
-    { userId: 7, tenantId: 2, role: "admin", email: "user@example.com" },
+    { userId: 7, tenantId: 2, role: "tenant_admin", email: "user@example.com" },
     { ip: "127.0.0.1" },
     { currentPassword: "Current123", newPassword: "Strong123" },
   );
@@ -450,7 +450,7 @@ test("authService.getCurrentUser rejects app-user tokens whose tenant does not m
   const result = await service.getCurrentUser({
     userId: 7,
     tenantId: 2,
-    role: "admin",
+    role: "tenant_admin",
     email: "user@example.com",
   });
 
@@ -467,7 +467,7 @@ test("authService.changePassword rejects app-user tokens whose tenant does not m
   });
 
   const result = await service.changePassword(
-    { userId: 7, tenantId: 2, role: "admin", email: "user@example.com" },
+    { userId: 7, tenantId: 2, role: "tenant_admin", email: "user@example.com" },
     { ip: "127.0.0.1" },
     { currentPassword: "Current123", newPassword: "Strong123" },
   );

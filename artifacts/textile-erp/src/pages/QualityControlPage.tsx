@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { isTenantAdminRole } from "@/lib/roles";
 import { Layout } from "@/components/Layout";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FABRIC_ROLL_WORKFLOW_STATUS, QC_RESULTS, WORKFLOW_DEFAULTS } from "@/lib/workflow-statuses";
 import {
   useListQcReports,
   useCreateQcReport,
@@ -20,23 +22,30 @@ export function QualityControlPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    fabricRollId: string;
+    result: (typeof QC_RESULTS)[number];
+    defects: string;
+    defectCount: string;
+    notes: string;
+  }>({
     fabricRollId: "",
-    result: "PASS",
+    result: WORKFLOW_DEFAULTS.qcResult,
     defects: "",
     defectCount: "0",
     notes: "",
   });
 
   const { data: reports, isLoading, error: reportsError } = useListQcReports({});
-  const { data: eligibleRolls, error: rollsError } = useListFabricRolls({ status: "QC_PENDING", limit: 200 });
+  const { data: eligibleRolls, error: rollsError } = useListFabricRolls({ status: FABRIC_ROLL_WORKFLOW_STATUS.qcPending, limit: 200 });
+  const eligibleRollsCount = (eligibleRolls || []).length;
 
   const createReport = useCreateQcReport({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListQcReportsQueryKey() });
         setShowCreate(false);
-        setForm({ fabricRollId: "", result: "PASS", defects: "", defectCount: "0", notes: "" });
+        setForm({ fabricRollId: "", result: WORKFLOW_DEFAULTS.qcResult, defects: "", defectCount: "0", notes: "" });
       },
     },
   });
@@ -85,7 +94,7 @@ export function QualityControlPage() {
       {accessErrorMessage && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
           <div className="font-medium">{accessErrorMessage}</div>
-          {accessError?.status === 403 && user?.role === "admin" && (
+          {accessError?.status === 403 && isTenantAdminRole(user?.role) && (
             <div className="mt-3">
               <Link href="/billing" className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700">
                 {t.goToBilling}
@@ -125,12 +134,14 @@ export function QualityControlPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">{t.result}</label>
                 <select
                   value={form.result}
-                  onChange={(e) => setForm({ ...form, result: e.target.value })}
+                  onChange={(e) => setForm({ ...form, result: e.target.value as (typeof QC_RESULTS)[number] })}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="PASS">{t.PASS}</option>
-                  <option value="FAIL">{t.FAIL}</option>
-                  <option value="SECOND">{t.SECOND}</option>
+                  {QC_RESULTS.map((result) => (
+                    <option key={result} value={result}>
+                      {(t as unknown as Record<string, string>)[result] || result}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -206,7 +217,22 @@ export function QualityControlPage() {
                 </tr>
               ) : (reports || []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">{t.noData}</td>
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <div>{t.noData}</div>
+                      <div className="text-xs text-slate-500">{t.emptyQcReportsHint}</div>
+                      {eligibleRollsCount === 0 ? (
+                        <div className="text-xs text-slate-500">{t.emptyQcEligibleHint}</div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setShowCreate(true)}
+                        className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                      >
+                        {t.emptyQcReportsCta}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ) : (
                 (reports || []).map((report) => (

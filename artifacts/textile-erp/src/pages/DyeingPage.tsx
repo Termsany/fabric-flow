@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useLang } from "@/contexts/LangContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { isTenantAdminRole } from "@/lib/roles";
 import { Layout } from "@/components/Layout";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DYEING_WORKFLOW_STATUS, FABRIC_ROLL_WORKFLOW_STATUS } from "@/lib/workflow-statuses";
 import {
   useListDyeingOrders,
   useCreateDyeingOrder,
@@ -16,16 +18,27 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { formatDate } from "@/lib/format";
 
+type DyeingWorkflowView = {
+  workflow?: {
+    linkedRollCount: number;
+    nextStep: {
+      description?: string | null;
+    };
+  };
+};
+
 export function DyeingPage() {
   const { t, lang } = useLang();
   const { user } = useAuth();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState("");
   const [selectedRolls, setSelectedRolls] = useState<number[]>([]);
   const [form, setForm] = useState({ dyehouseName: "", targetColor: "", targetShade: "", notes: "" });
 
-  const { data: orders, isLoading, error: ordersError } = useListDyeingOrders({});
-  const { data: eligibleRolls, error: rollsError } = useListFabricRolls({ status: "QC_PASSED", limit: 200 });
+  const normalizedSearch = search.trim();
+  const { data: orders, isLoading, error: ordersError } = useListDyeingOrders(normalizedSearch ? { search: normalizedSearch } : {});
+  const { data: eligibleRolls, error: rollsError } = useListFabricRolls({ status: FABRIC_ROLL_WORKFLOW_STATUS.qcPassed, limit: 200 });
 
   const createOrder = useCreateDyeingOrder({
     mutation: {
@@ -91,10 +104,19 @@ export function DyeingPage() {
         }
       />
 
+      <div className="mb-4">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={`${t.search} ${t.orderNumber} / ${t.dyehouse}...`}
+          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+
       {accessErrorMessage && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
           <div className="font-medium">{accessErrorMessage}</div>
-          {accessError?.status === 403 && user?.role === "admin" && (
+          {accessError?.status === 403 && isTenantAdminRole(user?.role) && (
             <div className="mt-3">
               <Link href="/billing" className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700">
                 {t.goToBilling}
@@ -221,28 +243,37 @@ export function DyeingPage() {
               ) : (orders || []).length === 0 ? (
                 <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">{t.noDyeingOrdersYet}</td></tr>
               ) : (
-                (orders || []).map((order) => (
-                  <tr key={order.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700">{order.orderNumber}</td>
-                    <td className="px-4 py-3 text-slate-600">{order.dyehouseName}</td>
-                    <td className="px-4 py-3 text-slate-600">{order.targetColor}</td>
-                    <td className="px-4 py-3 text-slate-600">{(order.rollIds || []).length}</td>
-                    <td className="px-4 py-3"><StatusBadge status={order.status} /></td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">
-                      {order.sentAt ? formatDate(order.sentAt, lang) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
-                        <button
-                          onClick={() => updateOrder.mutate({ id: order.id, data: { status: "COMPLETED", receivedAt: new Date().toISOString() } })}
-                          className="text-green-600 hover:text-green-800 text-xs font-medium"
-                        >
-                          {t.COMPLETED}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                (orders || []).map((order) => {
+                  const orderWorkflow = (order as typeof order & DyeingWorkflowView).workflow;
+
+                  return (
+                    <tr key={order.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700">{order.orderNumber}</td>
+                      <td className="px-4 py-3 text-slate-600">{order.dyehouseName}</td>
+                      <td className="px-4 py-3 text-slate-600">{order.targetColor}</td>
+                      <td className="px-4 py-3 text-slate-600">{orderWorkflow?.linkedRollCount ?? (order.rollIds || []).length}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={order.status} />
+                        {orderWorkflow?.nextStep.description && (
+                          <div className="mt-1 max-w-48 text-xs text-slate-400">{orderWorkflow.nextStep.description}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {order.sentAt ? formatDate(order.sentAt, lang) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {order.status !== DYEING_WORKFLOW_STATUS.completed && order.status !== DYEING_WORKFLOW_STATUS.cancelled && (
+                          <button
+                            onClick={() => updateOrder.mutate({ id: order.id, data: { status: DYEING_WORKFLOW_STATUS.completed, receivedAt: new Date().toISOString() } })}
+                            className="text-green-600 hover:text-green-800 text-xs font-medium"
+                          >
+                            {(t as unknown as Record<string, string>)[DYEING_WORKFLOW_STATUS.completed] || DYEING_WORKFLOW_STATUS.completed}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
