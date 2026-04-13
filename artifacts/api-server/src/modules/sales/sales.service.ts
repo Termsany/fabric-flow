@@ -4,6 +4,8 @@ import { salesRepository } from "./sales.repository";
 import { buildSalesStockSources, validateDeliverableRolls, validateSellableRolls } from "./sales.inventory";
 import { buildAuditChanges, pickAuditFields } from "../../utils/audit-log";
 import { buildSalesReport, type SalesReportTotals, type SalesStatusCount } from "./sales.reporting";
+import { buildSalesOrderWorkflowSummary } from "./sales.workflow";
+import { assertSalesOrderTransitionAllowed } from "../workflow/transition-guards";
 
 function formatCustomer(c: typeof customersTable.$inferSelect) {
   return {
@@ -31,6 +33,7 @@ function formatSalesOrder(o: typeof salesOrdersTable.$inferSelect) {
     rollIds: o.rollIds ?? [],
     invoiceNumber: o.invoiceNumber ?? null,
     notes: o.notes ?? null,
+    workflow: buildSalesOrderWorkflowSummary(o),
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
   };
@@ -56,6 +59,15 @@ export type SalesServiceDependencies = {
     findTenantRollIds: (tenantId: number, rollIds: number[]) => Promise<Array<{ id: number; status: string; warehouseId: number | null }>>;
     createSalesOrder: (values: typeof salesOrdersTable.$inferInsert) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
     updateRollStatusForTenant: (tenantId: number, rollIds: number[], status: string | undefined) => Promise<unknown>;
+    createWarehouseMovements: (values: Array<{
+      tenantId: number;
+      fabricRollId: number;
+      fromWarehouseId: number | null;
+      toWarehouseId: number | null;
+      movedById: number;
+      reason?: string | null;
+      movedAt?: Date;
+    }>) => Promise<unknown>;
     insertAuditLog: (values: unknown) => Promise<unknown>;
     findSalesOrderById: (tenantId: number, id: number) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
     updateSalesOrder: (tenantId: number, id: number, updates: Record<string, unknown>) => Promise<Array<typeof salesOrdersTable.$inferSelect>>;
@@ -195,6 +207,19 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
 
     if (rollIds.length > 0) {
       await salesRepository.updateRollStatusForTenant(tenantId, rollIds, FABRIC_ROLL_WORKFLOW_STATUS.reserved);
+      await salesRepository.createWarehouseMovements(
+        stockSources
+          .filter((source) => source.warehouseId != null)
+          .map((source) => ({
+            tenantId,
+            fabricRollId: source.fabricRollId,
+            fromWarehouseId: source.warehouseId ?? null,
+            toWarehouseId: source.warehouseId ?? null,
+            movedById: userId,
+            reason: `Reserved for sales order ${orderNumber}`,
+            movedAt: new Date(),
+          })),
+      );
     }
 
     await salesRepository.insertAuditLog({
@@ -238,6 +263,17 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
       return { error: "Sales order not found" as const };
     }
 
+    if (data.status != null && data.status !== existing.status) {
+      try {
+        assertSalesOrderTransitionAllowed(existing.status, data.status);
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : "Invalid sales order status transition",
+          status: 400 as const,
+        };
+      }
+    }
+
     const updates: Record<string, unknown> = {};
     if (data.status != null) updates.status = data.status;
     if (data.totalAmount != null) updates.totalAmount = data.totalAmount;
@@ -260,6 +296,19 @@ export function createSalesService(deps: SalesServiceDependencies = { salesRepos
 
     if (shouldMarkRollsSold) {
       await salesRepository.updateRollStatusForTenant(tenantId, existing.rollIds, FABRIC_ROLL_WORKFLOW_STATUS.sold);
+      await salesRepository.createWarehouseMovements(
+        deliveryStockSources
+          .filter((source) => source.warehouseId != null)
+          .map((source) => ({
+            tenantId,
+            fabricRollId: source.fabricRollId,
+            fromWarehouseId: source.warehouseId ?? null,
+            toWarehouseId: null,
+            movedById: userId ?? 0,
+            reason: `Outbound delivery for sales order ${order.orderNumber}`,
+            movedAt: new Date(),
+          })),
+      );
     }
 
     await salesRepository.insertAuditLog({

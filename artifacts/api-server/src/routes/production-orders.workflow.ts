@@ -1,5 +1,5 @@
 import type { fabricRollsTable, productionOrdersTable } from "@workspace/db";
-import { FABRIC_ROLL_WORKFLOW_STATUS } from "@workspace/api-zod";
+import { FABRIC_ROLL_WORKFLOW_STATUS, getAllowedProductionOrderTransitions } from "@workspace/api-zod";
 
 type ProductionOrderRow = typeof productionOrdersTable.$inferSelect;
 type FabricRollRow = typeof fabricRollsTable.$inferSelect;
@@ -35,6 +35,7 @@ type ProductionOrderWorkflowSummary = {
     description: string | null;
     route: string | null;
   };
+  allowedNextStatuses?: string[];
 };
 
 export function assertProductionOrderFabricRollLinks(
@@ -181,11 +182,13 @@ export function formatProductionOrderResponse(
   rolls: FabricRollRow[],
 ) {
   assertProductionOrderFabricRollLinks(order, rolls);
+  const resolvedBatchId = order.batchId ?? (rolls[0]?.batchId ?? null);
 
   return {
     id: order.id,
     tenantId: order.tenantId,
     orderNumber: order.orderNumber,
+    batchId: resolvedBatchId,
     fabricType: order.fabricType,
     gsm: order.gsm,
     width: order.width,
@@ -204,7 +207,10 @@ export function formatProductionOrderResponse(
       weight: roll.weight,
       warehouseId: roll.warehouseId ?? null,
     })),
-    workflow: buildProductionOrderWorkflowSummary(rolls),
+    workflow: {
+      ...buildProductionOrderWorkflowSummary(rolls),
+      allowedNextStatuses: getAllowedProductionOrderTransitions(order.status),
+    },
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
   };

@@ -28,6 +28,7 @@ type SearchRows = {
   productionOrders: Array<{
     id: number;
     orderNumber: string;
+    batchId: string | null;
     status: string;
     fabricType: string;
   }>;
@@ -50,6 +51,60 @@ export type OperationalSearchDependencies = {
   findMatches: (tenantId: number, query: string, limitPerType: number) => Promise<SearchRows>;
 };
 
+type MatchScore = {
+  score: number;
+  label: string;
+};
+
+function normalizeForMatch(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function scoreValueMatch(value: string, query: string): number {
+  if (!value) return 3;
+  if (value === query) return 0;
+  if (value.startsWith(query)) return 1;
+  if (value.includes(query)) return 2;
+  return 3;
+}
+
+function pickBestScore(values: Array<string | null | undefined>, query: string): MatchScore {
+  const normalizedQuery = normalizeForMatch(query);
+  let best = 3;
+  let label = "";
+
+  for (const value of values) {
+    const normalized = normalizeForMatch(value);
+    const score = scoreValueMatch(normalized, normalizedQuery);
+    if (score < best) {
+      best = score;
+      label = normalized;
+    }
+  }
+
+  return { score: best, label };
+}
+
+export function rankOperationalResults(results: OperationalSearchResult[], query: string) {
+  const scored = results.map((result) => {
+    const values = [
+      result.label,
+      result.subtitle ?? "",
+      String(result.metadata?.batchId ?? ""),
+      String(result.metadata?.invoiceNumber ?? ""),
+    ];
+    const match = pickBestScore(values, query);
+    return { result, score: match.score, label: match.label };
+  });
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    return a.label.localeCompare(b.label);
+  });
+
+  return scored.map((item) => item.result);
+}
+
 export function createOperationalSearchService(deps: OperationalSearchDependencies) {
   return {
     async search(tenantId: number, rawQuery: string, options: { limit?: number } = {}) {
@@ -61,7 +116,7 @@ export function createOperationalSearchService(deps: OperationalSearchDependenci
       const limitPerType = Math.min(Math.max(options.limit ?? 5, 1), 10);
       const rows = await deps.findMatches(tenantId, normalized.text, limitPerType);
 
-      return [
+      const results = [
         ...rows.fabricRolls.map<OperationalSearchResult>((roll) => ({
           type: "fabric_roll",
           id: roll.id,
@@ -78,11 +133,12 @@ export function createOperationalSearchService(deps: OperationalSearchDependenci
           type: "production_order",
           id: order.id,
           label: order.orderNumber,
-          subtitle: `${order.fabricType} · ${order.status}`,
+          subtitle: `${order.batchId ? `Batch ${order.batchId}` : order.fabricType} · ${order.status}`,
           href: `/production-orders/${order.id}`,
           metadata: {
             status: order.status,
             fabricType: order.fabricType,
+            batchId: order.batchId,
           },
         })),
         ...rows.salesOrders.map<OperationalSearchResult>((order) => ({
@@ -109,6 +165,8 @@ export function createOperationalSearchService(deps: OperationalSearchDependenci
           },
         })),
       ];
+
+      return rankOperationalResults(results, normalized.text);
     },
   };
 }
@@ -125,7 +183,10 @@ export const operationalSearchService = createOperationalSearchService({
       ilike(fabricRollsTable.batchId, query.pattern),
       ilike(fabricRollsTable.qrCode, query.pattern),
     ];
-    const productionOrderConditions = [ilike(productionOrdersTable.orderNumber, query.pattern)];
+    const productionOrderConditions = [
+      ilike(productionOrdersTable.orderNumber, query.pattern),
+      ilike(productionOrdersTable.batchId, query.pattern),
+    ];
     const salesOrderConditions = [
       ilike(salesOrdersTable.orderNumber, query.pattern),
       ilike(salesOrdersTable.invoiceNumber, query.pattern),
@@ -157,6 +218,7 @@ export const operationalSearchService = createOperationalSearchService({
       db.select({
         id: productionOrdersTable.id,
         orderNumber: productionOrdersTable.orderNumber,
+        batchId: productionOrdersTable.batchId,
         status: productionOrdersTable.status,
         fabricType: productionOrdersTable.fabricType,
       }).from(productionOrdersTable).where(

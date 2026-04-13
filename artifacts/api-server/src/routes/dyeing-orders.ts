@@ -23,6 +23,7 @@ import {
 } from "./dyeing-orders.workflow";
 import { buildAuditChanges, pickAuditFields } from "../utils/audit-log";
 import { normalizeIdentifierSearch } from "../utils/identifiers";
+import { assertFabricRollTransitionAllowed, WorkflowTransitionError } from "../modules/workflow/transition-guards";
 
 const router = Router();
 
@@ -46,6 +47,18 @@ function respondDyeingWorkflowError(
   error: unknown,
 ): boolean {
   if (error instanceof DyeingWorkflowError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
+
+function respondWorkflowTransitionError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof WorkflowTransitionError) {
     res.status(error.status).json({ error: error.message });
     return true;
   }
@@ -207,6 +220,18 @@ router.patch("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"
       ).returning();
 
       if (parsed.data.status === DYEING_WORKFLOW_STATUS.completed && order.rollIds && order.rollIds.length > 0) {
+        const linkedRolls = await tx.select().from(fabricRollsTable).where(
+          and(inArray(fabricRollsTable.id, order.rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)),
+        );
+
+        if (linkedRolls.length !== order.rollIds.length) {
+          throw new DyeingWorkflowError("One or more linked fabric rolls are missing for dyeing completion");
+        }
+
+        for (const roll of linkedRolls) {
+          assertFabricRollTransitionAllowed(roll.status, FABRIC_ROLL_WORKFLOW_STATUS.finished);
+        }
+
         await tx.update(fabricRollsTable).set({ status: FABRIC_ROLL_WORKFLOW_STATUS.finished })
           .where(and(inArray(fabricRollsTable.id, order.rollIds), eq(fabricRollsTable.tenantId, req.user!.tenantId)));
       }
@@ -241,6 +266,9 @@ router.patch("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"
     res.json(UpdateDyeingOrderResponse.parse(await formatDetailedDyeingOrder(order)));
   } catch (error) {
     if (respondDyeingWorkflowError(res, error)) {
+      return;
+    }
+    if (respondWorkflowTransitionError(res, error)) {
       return;
     }
 

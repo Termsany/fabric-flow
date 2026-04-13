@@ -8,6 +8,7 @@ export const productionOrdersTable = pgTable("production_orders", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
   orderNumber: text("order_number").notNull(),
+  batchId: text("batch_id"),
   fabricType: text("fabric_type").notNull(),
   gsm: real("gsm").notNull(),
   width: real("width").notNull(),
@@ -20,12 +21,14 @@ export const productionOrdersTable = pgTable("production_orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => ({
   productionOrdersTenantIdx: index("production_orders_tenant_id_idx").on(table.tenantId),
+  productionOrdersBatchIdx: index("production_orders_batch_id_idx").on(table.batchId),
 }));
 
 export const insertProductionOrderSchema = createInsertSchema(productionOrdersTable)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({
     orderNumber: z.string().trim().min(1).max(120),
+    batchId: z.string().trim().min(1).max(160).optional(),
     fabricType: z.string().trim().min(1).max(120),
     rawColor: z.string().trim().min(1).max(120),
     status: productionOrderStatusSchema.default("PENDING"),

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   db,
+  auditLogsTable,
   fabricRollsTable,
   warehousesTable,
   productionOrdersTable,
@@ -25,13 +26,27 @@ import {
 import { parseUpdateFabricRollBody } from "./operational-workflow.validation";
 import {
   buildFabricRollDetailResponse,
+  buildRollStatusChangeEvent,
   sortFabricRollTimeline,
   type FabricRollTimelineEvent,
 } from "./fabric-rolls.workflow";
 import { pickAuditFields, writeOperationalAuditLog } from "../utils/audit-log";
 import { normalizeIdentifierSearch } from "../utils/identifiers";
+import { assertFabricRollTransitionAllowed, WorkflowTransitionError } from "../modules/workflow/transition-guards";
 
 const router = Router();
+
+function respondWorkflowTransitionError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof WorkflowTransitionError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
 
 function formatRollBase(r: typeof fabricRollsTable.$inferSelect) {
   return {
@@ -179,7 +194,7 @@ async function loadFabricRollTimeline(
   tenantId: number,
   roll: typeof fabricRollsTable.$inferSelect,
 ) {
-  const [productionOrder, qcReports, movements, dyeingOrders, salesOrders] = await Promise.all([
+  const [productionOrder, qcReports, movements, dyeingOrders, salesOrders, auditLogs] = await Promise.all([
     db.select({
       id: productionOrdersTable.id,
       orderNumber: productionOrdersTable.orderNumber,
@@ -228,6 +243,18 @@ async function loadFabricRollTimeline(
     }).from(salesOrdersTable).where(
       and(eq(salesOrdersTable.tenantId, tenantId), sql`${roll.id} = ANY(${salesOrdersTable.rollIds})`),
     ).orderBy(salesOrdersTable.createdAt),
+    db.select({
+      id: auditLogsTable.id,
+      action: auditLogsTable.action,
+      changes: auditLogsTable.changes,
+      createdAt: auditLogsTable.createdAt,
+    }).from(auditLogsTable).where(
+      and(
+        eq(auditLogsTable.tenantId, tenantId),
+        eq(auditLogsTable.entityType, "fabric_roll"),
+        eq(auditLogsTable.entityId, roll.id),
+      ),
+    ).orderBy(auditLogsTable.createdAt),
   ]);
 
   const events: FabricRollTimelineEvent[] = [
@@ -240,6 +267,7 @@ async function loadFabricRollTimeline(
       entityType: "fabric_roll",
       entityId: roll.id,
       metadata: {
+        rollId: roll.id,
         rollCode: roll.rollCode,
         batchId: roll.batchId,
         productionOrderId: roll.productionOrderId,
@@ -256,7 +284,11 @@ async function loadFabricRollTimeline(
       status: productionOrder[0].status,
       entityType: "production_order",
       entityId: productionOrder[0].id,
-      metadata: { orderNumber: productionOrder[0].orderNumber },
+      metadata: {
+        rollId: roll.id,
+        rollCode: roll.rollCode,
+        orderNumber: productionOrder[0].orderNumber,
+      },
     });
   }
 
@@ -269,7 +301,12 @@ async function loadFabricRollTimeline(
       status: report.result,
       entityType: "qc_report",
       entityId: report.id,
-      metadata: { defectCount: report.defectCount },
+      metadata: {
+        rollId: roll.id,
+        rollCode: roll.rollCode,
+        defectCount: report.defectCount,
+        result: report.result,
+      },
     });
   }
 
@@ -277,12 +314,14 @@ async function loadFabricRollTimeline(
     events.push({
       occurredAt: (order.receivedAt ?? order.updatedAt ?? order.createdAt).toISOString(),
       type: "dyeing_order",
-      title: "Dyeing order updated",
+      title: order.status === "COMPLETED" ? "Dyeing completed" : "Dyeing order updated",
       description: `Dyeing order ${order.orderNumber} targeted ${order.targetColor}.`,
       status: order.status,
       entityType: "dyeing_order",
       entityId: order.id,
       metadata: {
+        rollId: roll.id,
+        rollCode: roll.rollCode,
         orderNumber: order.orderNumber,
         targetColor: order.targetColor,
         targetShade: order.targetShade,
@@ -300,6 +339,8 @@ async function loadFabricRollTimeline(
       entityType: "warehouse_movement",
       entityId: movement.id,
       metadata: {
+        rollId: roll.id,
+        rollCode: roll.rollCode,
         fromWarehouseId: movement.fromWarehouseId ?? null,
         toWarehouseId: movement.toWarehouseId ?? null,
       },
@@ -307,19 +348,55 @@ async function loadFabricRollTimeline(
   }
 
   for (const order of salesOrders) {
+    const isDelivered = order.status === "DELIVERED";
     events.push({
-      occurredAt: (order.status === "DELIVERED" ? order.updatedAt : order.createdAt).toISOString(),
+      occurredAt: (isDelivered ? order.updatedAt : order.createdAt).toISOString(),
       type: "sales_order",
-      title: "Sales order linked",
+      title: isDelivered ? "Sales order delivered" : "Sales order linked",
       description: `Sales order ${order.orderNumber} linked this roll to customer #${order.customerId}.`,
       status: order.status,
       entityType: "sales_order",
       entityId: order.id,
       metadata: {
+        rollId: roll.id,
+        rollCode: roll.rollCode,
         orderNumber: order.orderNumber,
         customerId: order.customerId,
       },
     });
+  }
+
+  const parseAuditChanges = (changes: string | null) => {
+    if (!changes) return null;
+    try {
+      const parsed = JSON.parse(changes) as {
+        before?: Record<string, unknown> | null;
+        after?: Record<string, unknown> | null;
+        context?: Record<string, unknown> | null;
+      };
+      if (!parsed || typeof parsed !== "object") return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  for (const log of auditLogs) {
+    const parsed = parseAuditChanges(log.changes);
+    const beforeStatus = typeof parsed?.before?.status === "string" ? parsed?.before?.status : null;
+    const afterStatus = typeof parsed?.after?.status === "string" ? parsed?.after?.status : null;
+    const event = buildRollStatusChangeEvent({
+      occurredAt: log.createdAt.toISOString(),
+      entityId: roll.id,
+      beforeStatus,
+      afterStatus,
+      action: log.action,
+      context: parsed?.context ?? null,
+    });
+
+    if (event) {
+      events.push(event);
+    }
   }
 
   return sortFabricRollTimeline(events);
@@ -465,6 +542,18 @@ router.patch(
   if (!existing) {
     res.status(404).json({ error: "Fabric roll not found" });
     return;
+  }
+
+  if (parsed.data.status != null && parsed.data.status !== existing.status) {
+    try {
+      assertFabricRollTransitionAllowed(existing.status, parsed.data.status);
+    } catch (error) {
+      if (respondWorkflowTransitionError(res, error)) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   const [roll] = await db.update(fabricRollsTable).set(updates).where(

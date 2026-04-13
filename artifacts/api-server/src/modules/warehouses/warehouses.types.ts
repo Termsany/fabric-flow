@@ -49,6 +49,9 @@ export type WarehousesServiceDependencies = {
       tenantId: number,
       options: { fabricRollId?: number; warehouseId?: number; search?: string; limit: number; offset: number },
     ) => Promise<WarehouseMovementRow[]>;
+    listWarehouseMovementsForTenant: (
+      tenantId: number,
+    ) => Promise<Array<{ fabricRollId: number; fromWarehouseId: number | null; toWarehouseId: number | null; movedAt: Date; createdAt: Date }>>;
     findFabricRollById: (tenantId: number, id: number) => Promise<FabricRollRow[]>;
     createWarehouseMovement: (values: WarehouseMovementInsert) => Promise<WarehouseMovementRow[]>;
     updateFabricRollWarehouse: (tenantId: number, fabricRollId: number, warehouseId: number | null) => Promise<unknown>;

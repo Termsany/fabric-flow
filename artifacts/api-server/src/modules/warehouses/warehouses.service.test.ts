@@ -24,6 +24,7 @@ test("warehousesService.createWarehouseMovement creates a movement and updates t
       }],
       updateWarehouse: async () => [],
       listWarehouseMovements: async () => [],
+      listWarehouseMovementsForTenant: async () => [],
       findFabricRollById: async () => [{
         id: 15,
         tenantId: 4,
@@ -97,6 +98,7 @@ test("warehousesService.createWarehouse blocks creation when the tenant has reac
       findWarehouseById: async () => [],
       updateWarehouse: async () => [],
       listWarehouseMovements: async () => [],
+      listWarehouseMovementsForTenant: async () => [],
       findFabricRollById: async () => [],
       createWarehouseMovement: async () => [],
       updateFabricRollWarehouse: async () => undefined,

@@ -14,7 +14,7 @@ const router = Router();
 router.get(
   "/search/operational",
   requireAuth,
-  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  requireTenantRole(["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
   async (req, res): Promise<void> => {
   const parsed = OperationalSearchQuery.safeParse(req.query);
   if (!parsed.success) {

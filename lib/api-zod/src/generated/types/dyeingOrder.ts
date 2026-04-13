@@ -36,6 +36,7 @@ export interface DyeingOrder {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   createdAt: string;
   updatedAt: string;

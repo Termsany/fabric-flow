@@ -39,7 +39,7 @@ export function FabricRollsPage() {
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder={t.search + " " + t.rollCode + "..."}
+            placeholder={`${t.search} ${t.rollCode} / ${t.batchId}...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full border border-slate-300 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -72,6 +72,7 @@ export function FabricRollsPage() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.rollCode}</th>
+                <th className="text-start px-4 py-3 font-medium text-slate-600">{t.batchId}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.fabricType}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.color}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.gsm}</th>
@@ -85,7 +86,7 @@ export function FabricRollsPage() {
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
+                    {Array.from({ length: 9 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-slate-200 rounded animate-pulse"></div>
                       </td>
@@ -94,7 +95,7 @@ export function FabricRollsPage() {
                 ))
               ) : (rolls || []).length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <div>{t.noRolls}</div>
                       <div className="text-xs text-slate-500">{t.emptyFabricRollsHint}</div>
@@ -108,6 +109,7 @@ export function FabricRollsPage() {
                 (rolls || []).map((roll) => (
                   <tr key={roll.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-slate-700 font-medium">{roll.rollCode}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{roll.batchId}</td>
                     <td className="px-4 py-3 text-slate-600">{roll.fabricType}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

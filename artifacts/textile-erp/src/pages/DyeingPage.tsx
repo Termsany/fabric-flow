@@ -24,6 +24,7 @@ type DyeingWorkflowView = {
     nextStep: {
       description?: string | null;
     };
+    allowedNextStatuses?: string[];
   };
 };
 
@@ -245,6 +246,13 @@ export function DyeingPage() {
               ) : (
                 (orders || []).map((order) => {
                   const orderWorkflow = (order as typeof order & DyeingWorkflowView).workflow;
+                  const isTerminal = order.status === DYEING_WORKFLOW_STATUS.completed
+                    || order.status === DYEING_WORKFLOW_STATUS.cancelled;
+                  const canComplete = !isTerminal && (
+                    orderWorkflow?.allowedNextStatuses
+                      ? orderWorkflow.allowedNextStatuses.includes(DYEING_WORKFLOW_STATUS.completed)
+                      : true
+                  );
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-50">
@@ -262,10 +270,11 @@ export function DyeingPage() {
                         {order.sentAt ? formatDate(order.sentAt, lang) : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        {order.status !== DYEING_WORKFLOW_STATUS.completed && order.status !== DYEING_WORKFLOW_STATUS.cancelled && (
+                        {!isTerminal && (
                           <button
                             onClick={() => updateOrder.mutate({ id: order.id, data: { status: DYEING_WORKFLOW_STATUS.completed, receivedAt: new Date().toISOString() } })}
-                            className="text-green-600 hover:text-green-800 text-xs font-medium"
+                            disabled={!canComplete || updateOrder.isPending}
+                            className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-50"
                           >
                             {(t as unknown as Record<string, string>)[DYEING_WORKFLOW_STATUS.completed] || DYEING_WORKFLOW_STATUS.completed}
                           </button>

@@ -2,6 +2,7 @@ import { formatMovement, type WarehousesServiceDependencies } from "./warehouses
 import { validateWarehouseMovementReadiness } from "./warehouses.workflow";
 import { buildAuditChanges } from "../../utils/audit-log";
 import { FABRIC_ROLL_WORKFLOW_STATUS } from "@workspace/api-zod";
+import { assertFabricRollTransitionAllowed } from "../workflow/transition-guards";
 
 export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependencies) {
   const { warehousesRepository } = deps;
@@ -40,6 +41,15 @@ export function createWarehouseMovementsUseCases(deps: WarehousesServiceDependen
       const readinessError = validateWarehouseMovementReadiness(roll, data.fromWarehouseId);
       if (readinessError) {
         return readinessError;
+      }
+
+      try {
+        assertFabricRollTransitionAllowed(roll.status, FABRIC_ROLL_WORKFLOW_STATUS.inStock);
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : "Invalid fabric roll status transition",
+          status: 400 as const,
+        };
       }
 
       if (data.fromWarehouseId) {

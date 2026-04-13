@@ -59,6 +59,8 @@ export interface ProductionOrder {
   id: number;
   tenantId: number;
   orderNumber: string;
+  /** @nullable */
+  batchId?: string | null;
   fabricType: string;
   gsm: number;
   width: number;
@@ -94,6 +96,7 @@ export interface ProductionOrder {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   createdAt: string;
   updatedAt: string;
@@ -105,6 +108,7 @@ export interface CreateProductionOrderRequest {
   width: number;
   rawColor: string;
   quantity: number;
+  batchId?: string;
   notes?: string;
 }
 
@@ -144,6 +148,7 @@ export interface FabricRoll {
       /** @nullable */
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   traceability?: {
     /** @nullable */
@@ -315,6 +320,7 @@ export interface DyeingOrder {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   createdAt: string;
   updatedAt: string;
@@ -433,6 +439,15 @@ export interface SalesOrder {
   }[];
   /** @nullable */
   invoiceNumber?: string | null;
+  workflow?: {
+    currentState: string;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+    allowedNextStatuses: string[];
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -524,6 +539,25 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export interface Notification {
+  id: number;
+  tenantId: number;
+  /** @nullable */
+  userId?: number | null;
+  type: string;
+  title: string;
+  message: string;
+  severity: string;
+  /** @nullable */
+  entityType?: string | null;
+  /** @nullable */
+  entityId?: number | null;
+  isRead: boolean;
+  /** @nullable */
+  readAt?: string | null;
+  createdAt: string;
+}
+
 export type BillingCheckoutRequestPlan =
   (typeof BillingCheckoutRequestPlan)[keyof typeof BillingCheckoutRequestPlan];
 
@@ -577,6 +611,20 @@ export interface BillingPlanDetails {
 export interface BillingUsage {
   users: number;
   warehouses: number;
+}
+
+export interface OnboardingStatusStep {
+  key: string;
+  completed: boolean;
+  route: string;
+}
+
+export interface OnboardingStatus {
+  tenantId: number;
+  isFirstRun: boolean;
+  completedCount: number;
+  totalCount: number;
+  steps: OnboardingStatusStep[];
 }
 
 export interface BillingLimits {
@@ -686,6 +734,7 @@ export interface BillingSubscription {
 
 export type ListProductionOrdersParams = {
   status?: string;
+  batchId?: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -820,3 +869,18 @@ export type ListAuditLogsParams = {
   limit?: number;
   offset?: number;
 };
+
+export type ListNotificationsParams = {
+  unreadOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  refresh?: boolean;
+};
+
+export type MarkNotificationReadParams = {
+  id: number;
+};
+
+export interface MarkNotificationsReadRequest {
+  ids: number[];
+}

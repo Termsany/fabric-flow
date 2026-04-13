@@ -10,6 +10,8 @@ export interface ProductionOrder {
   id: number;
   tenantId: number;
   orderNumber: string;
+  /** @nullable */
+  batchId?: string | null;
   fabricType: string;
   gsm: number;
   width: number;
@@ -45,6 +47,7 @@ export interface ProductionOrder {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   createdAt: string;
   updatedAt: string;

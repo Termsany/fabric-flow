@@ -236,7 +236,7 @@ export function PlanFormModal({
                   value={form.code}
                   onChange={(e) => setForm((cur) => ({ ...cur, code: e.target.value }))}
                   className={inputClassName}
-                  placeholder="basic"
+                  placeholder={t.planCodePlaceholder}
                   dir="ltr"
                 />,
               )}

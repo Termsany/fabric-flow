@@ -8,6 +8,7 @@
 
 export type ListProductionOrdersParams = {
   status?: string;
+  batchId?: string;
   search?: string;
   limit?: number;
   offset?: number;

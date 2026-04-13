@@ -25,3 +25,4 @@ export * from "./plan-prices";
 export * from "./plan-features";
 export * from "./tenant-subscriptions";
 export * from "./subscription-history";
+export * from "./notifications";

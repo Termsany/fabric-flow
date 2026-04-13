@@ -26,6 +26,9 @@ import {
 } from "./qc-reports.workflow";
 import { buildAuditChanges, pickAuditFields } from "../utils/audit-log";
 import { buildQcReportSummary } from "./qc-reports.reporting";
+import { assertFabricRollTransitionAllowed, WorkflowTransitionError } from "../modules/workflow/transition-guards";
+import { notificationsService } from "../modules/notifications/notifications.service";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -65,6 +68,18 @@ function respondQcWorkflowError(
   error: unknown,
 ): boolean {
   if (error instanceof QcWorkflowError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
+
+function respondWorkflowTransitionError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof WorkflowTransitionError) {
     res.status(error.status).json({ error: error.message });
     return true;
   }
@@ -159,6 +174,7 @@ router.post("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPla
       assertRollCanReceiveQc(roll);
 
       const decision = buildQcDecision(result);
+      assertFabricRollTransitionAllowed(roll.status, decision.rollStatus);
       const [report] = await tx.insert(qcReportsTable).values({
         tenantId: req.user!.tenantId,
         fabricRollId,
@@ -200,8 +216,26 @@ router.post("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPla
     }
 
     res.status(201).json(GetQcReportResponse.parse(formatReport(created.report, created.roll)));
+
+    if (created.report.result === "FAIL") {
+      notificationsService.createNotification({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        type: "qc_failed",
+        title: "QC failed",
+        message: `Fabric roll ${created.roll.rollCode} failed QC.`,
+        severity: "critical",
+        entityType: "fabric_roll",
+        entityId: created.roll.id,
+      }).catch((error) => {
+        logger.warn({ err: error, reportId: created.report.id }, "Failed to create QC failure notification");
+      });
+    }
   } catch (error) {
     if (respondQcWorkflowError(res, error)) {
+      return;
+    }
+    if (respondWorkflowTransitionError(res, error)) {
       return;
     }
 
@@ -268,6 +302,7 @@ router.patch("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), che
         assertRollCanReceiveQc(roll);
 
         const newStatus = getFabricRollStatusFromQcResult(parsed.data.result);
+        assertFabricRollTransitionAllowed(roll.status, newStatus);
         const [updatedRoll] = await tx.update(fabricRollsTable).set({ status: newStatus }).where(
           and(eq(fabricRollsTable.id, report.fabricRollId), eq(fabricRollsTable.tenantId, req.user!.tenantId))
         ).returning();
@@ -321,6 +356,9 @@ router.patch("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), che
     res.json(UpdateQcReportResponse.parse(formatReport(updated.report, updated.roll)));
   } catch (error) {
     if (respondQcWorkflowError(res, error)) {
+      return;
+    }
+    if (respondWorkflowTransitionError(res, error)) {
       return;
     }
 

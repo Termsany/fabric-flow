@@ -1,4 +1,4 @@
-import { db, auditLogsTable, customersTable, fabricRollsTable, salesOrdersTable } from "@workspace/db";
+import { db, auditLogsTable, customersTable, fabricRollsTable, salesOrdersTable, warehouseMovementsTable } from "@workspace/db";
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { normalizeIdentifierSearch } from "../../utils/identifiers";
 
@@ -77,6 +77,19 @@ export const salesRepository = {
   updateRollStatusForTenant(tenantId: number, rollIds: number[], status: typeof fabricRollsTable.$inferInsert.status) {
     return db.update(fabricRollsTable).set({ status })
       .where(and(inArray(fabricRollsTable.id, rollIds), eq(fabricRollsTable.tenantId, tenantId)));
+  },
+
+  createWarehouseMovements(values: Array<{
+    tenantId: number;
+    fabricRollId: number;
+    fromWarehouseId: number | null;
+    toWarehouseId: number | null;
+    movedById: number;
+    reason?: string | null;
+    movedAt?: Date;
+  }>) {
+    if (values.length === 0) return [];
+    return db.insert(warehouseMovementsTable).values(values).returning();
   },
 
   insertAuditLog(values: typeof auditLogsTable.$inferInsert) {

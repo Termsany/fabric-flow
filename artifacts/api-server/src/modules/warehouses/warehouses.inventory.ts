@@ -29,6 +29,14 @@ export function inferInventoryOperation(movement: Pick<InventoryMovementInput, "
     return "outbound";
   }
 
+  if (
+    movement.fromWarehouseId != null
+    && movement.toWarehouseId != null
+    && movement.fromWarehouseId === movement.toWarehouseId
+  ) {
+    return "reserve";
+  }
+
   return "transfer";
 }
 
@@ -82,6 +90,22 @@ export function validateInventoryOperation(input: {
     return;
   }
 
+  if (input.operation === "reserve") {
+    if (input.currentWarehouseId == null) {
+      throw new InventoryStockError("Cannot reserve stock that is not currently in warehouse");
+    }
+
+    if (input.fromWarehouseId != null && input.fromWarehouseId !== input.currentWarehouseId) {
+      throw new InventoryStockError("Reserve source warehouse must match current stock location");
+    }
+
+    if (input.toWarehouseId != null && input.toWarehouseId !== input.currentWarehouseId) {
+      throw new InventoryStockError("Reserve destination warehouse must match current stock location");
+    }
+
+    return;
+  }
+
   if (input.currentWarehouseId == null) {
     throw new InventoryStockError("Cannot reserve stock that is not currently in warehouse");
   }
@@ -89,6 +113,7 @@ export function validateInventoryOperation(input: {
 
 export function deriveStockByWarehouse(movements: InventoryMovementInput[]) {
   const rollLocations = new Map<number, number | null>();
+  const reservedRolls = new Set<number>();
 
   for (const movement of [...movements].sort((a, b) => movementTime(a) - movementTime(b))) {
     const operation = inferInventoryOperation(movement);
@@ -101,6 +126,15 @@ export function deriveStockByWarehouse(movements: InventoryMovementInput[]) {
       toWarehouseId: movement.toWarehouseId,
     });
 
+    if (operation === "reserve") {
+      if (reservedRolls.has(movement.fabricRollId)) {
+        throw new InventoryStockError("Cannot reserve the same roll more than once");
+      }
+      reservedRolls.add(movement.fabricRollId);
+      continue;
+    }
+
+    reservedRolls.delete(movement.fabricRollId);
     rollLocations.set(movement.fabricRollId, operation === "outbound" ? null : movement.toWarehouseId);
   }
 
@@ -116,5 +150,6 @@ export function deriveStockByWarehouse(movements: InventoryMovementInput[]) {
   return {
     rollLocations,
     stockByWarehouse,
+    reservedRolls,
   };
 }

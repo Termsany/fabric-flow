@@ -9,15 +9,10 @@ import {
 test("fabric roll workflow summary directs QC-pending rolls to quality control", () => {
   const summary = buildFabricRollWorkflowSummary("QC_PENDING");
 
-  assert.deepEqual(summary, {
-    currentStatus: "QC_PENDING",
-    currentStage: "quality_control",
-    nextStep: {
-      action: "Run quality control",
-      description: "Create a QC report so the next workflow path becomes explicit.",
-      route: "/quality-control",
-    },
-  });
+  assert.equal(summary.currentStatus, "QC_PENDING");
+  assert.equal(summary.currentStage, "quality_control");
+  assert.deepEqual(summary.allowedNextStatuses, ["QC_PASSED", "QC_FAILED"]);
+  assert.equal(summary.nextStep.route, "/quality-control");
 });
 
 test("fabric roll workflow summary directs finished rolls to warehouse", () => {
@@ -73,6 +68,7 @@ test("fabric roll detail response includes explicit workflow and traceability bl
 
   assert.equal(response.workflow.currentStatus, "IN_STOCK");
   assert.equal(response.workflow.nextStep.route, "/sales");
+  assert.ok(response.workflow.allowedNextStatuses?.length);
   assert.equal(response.traceability.currentWarehouse?.name, "Main");
   assert.equal(response.traceability.productionOrder?.orderNumber, "PO-5");
   assert.equal(response.timeline[0]?.type, "roll_created");

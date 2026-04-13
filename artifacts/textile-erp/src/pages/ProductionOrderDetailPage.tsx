@@ -73,6 +73,11 @@ export function ProductionOrderDetailPage() {
           <h1 className="text-2xl font-bold text-slate-900 font-mono">{order.orderNumber}</h1>
           <StatusBadge status={order.status} />
         </div>
+        {order.batchId && (
+          <div className="mt-2 text-sm text-slate-500">
+            {t.batchId}: <span className="font-mono text-slate-700">{order.batchId}</span>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -83,6 +88,7 @@ export function ProductionOrderDetailPage() {
           { label: t.width, value: `${order.width} cm` },
           { label: t.quantity, value: order.quantity },
           { label: t.rollsGenerated, value: order.rollsGenerated },
+          ...(order.batchId ? [{ label: t.batchId, value: order.batchId }] : []),
         ].map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
             <div className="text-xs text-slate-400 mb-1">{label}</div>

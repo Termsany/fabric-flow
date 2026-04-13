@@ -12,5 +12,6 @@ export interface CreateProductionOrderRequest {
   width: number;
   rawColor: string;
   quantity: number;
+  batchId?: string;
   notes?: string;
 }

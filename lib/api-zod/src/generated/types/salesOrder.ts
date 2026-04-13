@@ -22,6 +22,15 @@ export interface SalesOrder {
   }[];
   /** @nullable */
   invoiceNumber?: string | null;
+  workflow?: {
+    currentState: string;
+    nextStep: {
+      action?: string | null;
+      description?: string | null;
+      route?: string | null;
+    };
+    allowedNextStatuses: string[];
+  };
   createdAt: string;
   updatedAt: string;
 }

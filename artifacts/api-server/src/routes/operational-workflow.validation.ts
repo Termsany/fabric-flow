@@ -48,6 +48,7 @@ const createProductionOrderSchema = CreateProductionOrderBody.extend({
   width: positiveNumber("width"),
   rawColor: requiredText("rawColor"),
   quantity: positiveInteger("quantity"),
+  batchId: optionalText(),
   notes: optionalText(),
 });
 

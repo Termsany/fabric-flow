@@ -29,6 +29,7 @@ import { BillingPayPage } from "@/pages/BillingPayPage";
 import { ProfileSecurityPage } from "@/pages/ProfileSecurityPage";
 import { PricingPage } from "@/pages/PricingPage";
 import { SubscriptionPage } from "@/pages/SubscriptionPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 import NotFound from "@/pages/not-found";
 import { useLang } from "@/contexts/LangContext";
 import { Toaster } from "@/components/ui/toaster";
@@ -114,6 +115,7 @@ function Router() {
       <Route path="/dyeing" component={() => <ProtectedRoute component={DyeingPage} allowedRoles={["tenant_admin", "dyeing_user"]} />} />
       <Route path="/warehouses" component={() => <ProtectedRoute component={WarehousePage} allowedRoles={["tenant_admin", "warehouse_user"]} />} />
       <Route path="/sales" component={() => <ProtectedRoute component={SalesPage} allowedRoles={["tenant_admin", "sales_user"]} />} />
+      <Route path="/notifications" component={() => <ProtectedRoute component={NotificationsPage} allowedRoles={["tenant_admin", "production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]} />} />
       <Route path="/users" component={() => <ProtectedRoute component={UsersPage} adminOnly />} />
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} adminOnly />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} adminOnly />} />

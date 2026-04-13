@@ -41,6 +41,7 @@ import { generatePaymentQr } from "../lib/payment-qr";
 import { paymentMethodsService } from "../modules/payment-methods/payment-methods.service";
 import { buildSubscriptionStatusSummary } from "../lib/subscription-state";
 import { GetBillingSubscriptionResponse } from "@workspace/api-zod";
+import { notificationsService } from "../modules/notifications/notifications.service";
 
 const router = Router();
 
@@ -286,6 +287,24 @@ function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | undefined {
   }
 
   return typeof subscription === "string" ? subscription : subscription.id;
+}
+
+async function findTenantIdByStripeIdentifiers(input: { customerId?: string | null; subscriptionId?: string | null }) {
+  const conditions = [];
+  if (input.customerId) {
+    conditions.push(eq(tenantsTable.stripeCustomerId, input.customerId));
+  }
+  if (input.subscriptionId) {
+    conditions.push(eq(tenantsTable.stripeSubscriptionId, input.subscriptionId));
+  }
+  if (conditions.length === 0) {
+    return null;
+  }
+
+  const [tenant] = await db.select({ id: tenantsTable.id }).from(tenantsTable)
+    .where(or(...conditions))
+    .limit(1);
+  return tenant?.id ?? null;
 }
 
 async function claimWebhookEvent(event: Stripe.Event, tenantId?: number | null): Promise<boolean> {
@@ -944,14 +963,33 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
 
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+        const subscriptionId = getInvoiceSubscriptionId(invoice);
         await setTenantBillingByStripeIds({
-          customerId: typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id,
-          subscriptionId: getInvoiceSubscriptionId(invoice),
+          customerId,
+          subscriptionId,
           updates: {
             billingStatus: "past_due",
             lastInvoiceStatus: "payment_failed",
           },
         });
+
+        const tenantId = await findTenantIdByStripeIdentifiers({ customerId, subscriptionId });
+        if (tenantId) {
+          const invoiceLabel = invoice.number ?? invoice.id;
+          await notificationsService.createNotification({
+            tenantId,
+            type: "unpaid_invoice",
+            title: "Unpaid invoice",
+            message: `Invoice ${invoiceLabel} payment failed. Please review billing.`,
+            severity: "critical",
+            entityType: "invoice",
+            entityId: null,
+            dedupeWindowHours: 12,
+          }).catch((error) => {
+            logger.warn({ err: error, tenantId }, "Failed to create unpaid invoice notification");
+          });
+        }
         break;
       }
 

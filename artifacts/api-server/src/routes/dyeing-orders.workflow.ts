@@ -1,5 +1,5 @@
 import type { dyeingOrdersTable, fabricRollsTable } from "@workspace/db";
-import { DYEING_WORKFLOW_STATUS, FABRIC_ROLL_WORKFLOW_STATUS } from "@workspace/api-zod";
+import { DYEING_WORKFLOW_STATUS, FABRIC_ROLL_WORKFLOW_STATUS, getAllowedDyeingOrderTransitions } from "@workspace/api-zod";
 
 type DyeingOrderRow = typeof dyeingOrdersTable.$inferSelect;
 type FabricRollRow = typeof fabricRollsTable.$inferSelect;
@@ -30,6 +30,12 @@ export function assertRollsCanEnterDyeing(rollIds: number[], rolls: FabricRollRo
 }
 
 export function assertDyeingTransitionAllowed(order: DyeingOrderRow, nextStatus: string): void {
+  if (!getAllowedDyeingOrderTransitions(order.status).includes(nextStatus as (typeof order.status))) {
+    if (order.status !== nextStatus) {
+      throw new DyeingWorkflowError(`Invalid dyeing order status transition from ${order.status} to ${nextStatus}`);
+    }
+  }
+
   if (order.status === DYEING_WORKFLOW_STATUS.completed && nextStatus !== DYEING_WORKFLOW_STATUS.completed) {
     throw new DyeingWorkflowError("Completed dyeing orders cannot be reopened");
   }
@@ -45,6 +51,7 @@ export function assertDyeingTransitionAllowed(order: DyeingOrderRow, nextStatus:
 
 export function buildDyeingWorkflowSummary(order: Pick<DyeingOrderRow, "status" | "rollIds">) {
   const rollCount = order.rollIds?.length ?? 0;
+  const allowedNextStatuses = getAllowedDyeingOrderTransitions(order.status);
 
   if (order.status === DYEING_WORKFLOW_STATUS.completed) {
     return {
@@ -55,6 +62,7 @@ export function buildDyeingWorkflowSummary(order: Pick<DyeingOrderRow, "status" 
         description: "Dyeing is complete. Linked rolls are ready for warehouse assignment.",
         route: "/warehouse",
       },
+      allowedNextStatuses,
     };
   }
 
@@ -67,6 +75,7 @@ export function buildDyeingWorkflowSummary(order: Pick<DyeingOrderRow, "status" 
         description: "This dyeing order was cancelled and should not move forward.",
         route: null,
       },
+      allowedNextStatuses,
     };
   }
 
@@ -78,6 +87,7 @@ export function buildDyeingWorkflowSummary(order: Pick<DyeingOrderRow, "status" 
       description: "Mark this dyeing order completed once the dyehouse returns the linked rolls.",
       route: "/dyeing",
     },
+    allowedNextStatuses,
   };
 }
 

@@ -26,6 +26,7 @@ type FabricRollDetailView = {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses?: string[];
   };
   traceability?: {
     productionOrder?: {
@@ -121,6 +122,7 @@ export function FabricRollDetailPage() {
   }
 
   const rollDetail = roll as typeof roll & FabricRollDetailView;
+  const allowedStatusOptions = rollDetail.workflow?.allowedNextStatuses ?? FABRIC_ROLL_STATUSES;
 
   return (
     <Layout>
@@ -188,17 +190,18 @@ export function FabricRollDetailPage() {
               <select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value)}
+                disabled={allowedStatusOptions.length === 0}
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">{t.status}</option>
-                {FABRIC_ROLL_STATUSES.map((s) => (
+                {allowedStatusOptions.map((s) => (
                   <option key={s} value={s}>
                     {(t as unknown as Record<string, string>)[s] || s}
                   </option>
                 ))}
               </select>
               <button
-                disabled={!newStatus || updateRoll.isPending}
+                disabled={!newStatus || updateRoll.isPending || allowedStatusOptions.length === 0}
                 onClick={() => {
                   if (newStatus) {
                     updateRoll.mutate({ id: roll.id, data: { status: newStatus } });

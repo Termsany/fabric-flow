@@ -20,6 +20,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Users, ShoppingCart } from "lucide-react";
 import { formatDate, formatNumber } from "@/lib/format";
 
+type SalesWorkflowView = {
+  workflow?: {
+    allowedNextStatuses?: string[];
+  };
+};
+
 export function SalesPage() {
   const { t, lang } = useLang();
   const { user } = useAuth();
@@ -351,6 +357,13 @@ export function SalesPage() {
                 ) : (
                   (orders || []).map((order) => {
                     const customer = (customers || []).find((c) => c.id === order.customerId);
+                    const orderWorkflow = (order as typeof order & SalesWorkflowView).workflow;
+                    const canConfirm = orderWorkflow?.allowedNextStatuses
+                      ? orderWorkflow.allowedNextStatuses.includes(SALES_WORKFLOW_STATUS.confirmed)
+                      : order.status === SALES_WORKFLOW_STATUS.draft;
+                    const canDeliver = orderWorkflow?.allowedNextStatuses
+                      ? orderWorkflow.allowedNextStatuses.includes(SALES_WORKFLOW_STATUS.delivered)
+                      : order.status === SALES_WORKFLOW_STATUS.confirmed;
                     return (
                       <tr key={order.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700">{order.orderNumber}</td>
@@ -362,12 +375,22 @@ export function SalesPage() {
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
                             {order.status === SALES_WORKFLOW_STATUS.draft && (
-                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.confirmed } })}
-                                className="text-blue-600 hover:text-blue-800 text-xs font-medium">{(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.confirmed] || SALES_WORKFLOW_STATUS.confirmed}</button>
+                              <button
+                                onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.confirmed } })}
+                                disabled={!canConfirm || updateOrder.isPending}
+                                className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50"
+                              >
+                                {(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.confirmed] || SALES_WORKFLOW_STATUS.confirmed}
+                              </button>
                             )}
                             {order.status === SALES_WORKFLOW_STATUS.confirmed && (
-                              <button onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.delivered } })}
-                                className="text-green-600 hover:text-green-800 text-xs font-medium">{(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.delivered] || SALES_WORKFLOW_STATUS.delivered}</button>
+                              <button
+                                onClick={() => updateOrder.mutate({ id: order.id, data: { status: SALES_WORKFLOW_STATUS.delivered } })}
+                                disabled={!canDeliver || updateOrder.isPending}
+                                className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-50"
+                              >
+                                {(t as unknown as Record<string, string>)[SALES_WORKFLOW_STATUS.delivered] || SALES_WORKFLOW_STATUS.delivered}
+                              </button>
                             )}
                           </div>
                         </td>

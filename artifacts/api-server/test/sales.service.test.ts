@@ -41,6 +41,7 @@ function createServiceWithRoll(options: { status: string; warehouseId?: number |
       updateRollStatusForTenant: async (tenantId, rollIds, status) => {
         rollStatusUpdates.push({ tenantId, rollIds, status });
       },
+      createWarehouseMovements: async () => [],
       insertAuditLog: async (values) => {
         auditLogs.push(values);
       },
@@ -115,6 +116,7 @@ test("sales service audits successful delivery finalization", async () => {
       findTenantRollIds: async () => [{ id: 1001, status: "RESERVED", warehouseId: 3 }],
       createSalesOrder: async () => [],
       updateRollStatusForTenant: async () => undefined,
+      createWarehouseMovements: async () => [],
       insertAuditLog: async (values) => {
         auditLogs.push(values);
       },
@@ -173,6 +175,7 @@ test("sales service rejects delivery when reserved stock is missing", async () =
       findTenantRollIds: async () => [{ id: 1001, status: "IN_STOCK", warehouseId: 3 }],
       createSalesOrder: async () => [],
       updateRollStatusForTenant: async () => undefined,
+      createWarehouseMovements: async () => [],
       insertAuditLog: async () => undefined,
       findSalesOrderById: async () => [{
         id: 50,

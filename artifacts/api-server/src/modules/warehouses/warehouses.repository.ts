@@ -76,6 +76,18 @@ export const warehousesRepository = {
       .offset(options.offset);
   },
 
+  listWarehouseMovementsForTenant(tenantId: number) {
+    return db.select({
+      fabricRollId: warehouseMovementsTable.fabricRollId,
+      fromWarehouseId: warehouseMovementsTable.fromWarehouseId,
+      toWarehouseId: warehouseMovementsTable.toWarehouseId,
+      movedAt: warehouseMovementsTable.movedAt,
+      createdAt: warehouseMovementsTable.createdAt,
+    }).from(warehouseMovementsTable)
+      .where(eq(warehouseMovementsTable.tenantId, tenantId))
+      .orderBy(desc(warehouseMovementsTable.movedAt));
+  },
+
   findFabricRollById(tenantId: number, id: number) {
     return db.select().from(fabricRollsTable).where(
       and(eq(fabricRollsTable.id, id), eq(fabricRollsTable.tenantId, tenantId)),

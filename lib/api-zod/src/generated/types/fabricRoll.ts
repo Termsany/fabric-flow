@@ -34,6 +34,7 @@ export interface FabricRoll {
       description?: string | null;
       route?: string | null;
     };
+    allowedNextStatuses: string[];
   };
   traceability?: {
     productionOrder?: {

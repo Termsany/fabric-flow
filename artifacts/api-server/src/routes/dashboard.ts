@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, fabricRollsTable, productionOrdersTable, dyeingOrdersTable, salesOrdersTable, customersTable, auditLogsTable, usersTable, qcReportsTable } from "@workspace/db";
+import { db, fabricRollsTable, productionOrdersTable, dyeingOrdersTable, salesOrdersTable, customersTable, auditLogsTable, usersTable, qcReportsTable, tenantsTable } from "@workspace/db";
 import { eq, and, count, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, requireTenantAdmin, requireTenantRole } from "../lib/auth";
 import { checkPlanAccess } from "../lib/billing";
@@ -11,6 +11,7 @@ import {
   GetProductionByMonthResponse,
   ListAuditLogsQueryParams,
   ListAuditLogsResponse,
+  GetOnboardingStatusResponse,
 } from "@workspace/api-zod";
 
 const router = Router();
@@ -175,6 +176,75 @@ router.get(
     .orderBy(sql`to_char(created_at, 'YYYY-MM')`);
 
   res.json(GetProductionByMonthResponse.parse(results.map(r => ({ month: r.month, count: r.count }))));
+});
+
+router.get("/onboarding/status", requireAuth, requireTenantAdmin, async (req, res): Promise<void> => {
+  const tenantId = req.user!.tenantId;
+
+  const [
+    [userCount],
+    [rollCount],
+    [orderCount],
+    [tenant],
+  ] = await Promise.all([
+    db.select({ total: count() }).from(usersTable).where(eq(usersTable.tenantId, tenantId)),
+    db.select({ total: count() }).from(fabricRollsTable).where(eq(fabricRollsTable.tenantId, tenantId)),
+    db.select({ total: count() }).from(productionOrdersTable).where(eq(productionOrdersTable.tenantId, tenantId)),
+    db.select({
+      billingStatus: tenantsTable.billingStatus,
+      stripeCustomerId: tenantsTable.stripeCustomerId,
+      stripeSubscriptionId: tenantsTable.stripeSubscriptionId,
+      lastInvoiceStatus: tenantsTable.lastInvoiceStatus,
+      subscriptionInterval: tenantsTable.subscriptionInterval,
+      trialEndsAt: tenantsTable.trialEndsAt,
+    }).from(tenantsTable).where(eq(tenantsTable.id, tenantId)).limit(1),
+  ]);
+
+  const hasExtraUsers = (userCount?.total ?? 0) > 1;
+  const hasRolls = (rollCount?.total ?? 0) > 0;
+  const hasOrders = (orderCount?.total ?? 0) > 0;
+  const billingConfigured = Boolean(
+    tenant?.stripeCustomerId
+    || tenant?.stripeSubscriptionId
+    || tenant?.lastInvoiceStatus
+    || tenant?.subscriptionInterval
+    || tenant?.trialEndsAt
+    || tenant?.billingStatus,
+  );
+
+  const steps = [
+    {
+      key: "users",
+      completed: hasExtraUsers,
+      route: "/users",
+    },
+    {
+      key: "billing",
+      completed: billingConfigured,
+      route: "/billing",
+    },
+    {
+      key: "rolls",
+      completed: hasRolls,
+      route: "/fabric-rolls",
+    },
+    {
+      key: "production",
+      completed: hasOrders,
+      route: "/production-orders",
+    },
+  ];
+
+  const completedCount = steps.filter(step => step.completed).length;
+  const isFirstRun = !hasExtraUsers && !hasRolls && !hasOrders;
+
+  res.json(GetOnboardingStatusResponse.parse({
+    tenantId,
+    isFirstRun,
+    completedCount,
+    totalCount: steps.length,
+    steps,
+  }));
 });
 
 router.get("/audit-logs", requireAuth, requireTenantAdmin, checkPlanAccess("pro"), async (req, res): Promise<void> => {

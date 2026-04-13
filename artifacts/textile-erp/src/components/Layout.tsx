@@ -21,6 +21,7 @@ import {
   Receipt,
   Settings,
   Shield,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -45,6 +46,7 @@ const navItems = (t: ReturnType<typeof useLang>["t"], role: string) => [
       ]
     : [
         ...(hasTenantFeatureAccess(role, "dashboard") ? [{ href: "/dashboard", label: t.dashboard, icon: LayoutDashboard }] : []),
+        { href: "/notifications", label: t.notifications, icon: Bell },
         ...(hasTenantFeatureAccess(role, "fabric_rolls") ? [{ href: "/fabric-rolls", label: t.fabricRolls, icon: Package }] : []),
         ...(hasTenantFeatureAccess(role, "production") ? [{ href: "/production-orders", label: t.productionOrders, icon: ScrollText }] : []),
         ...(hasTenantFeatureAccess(role, "qc") ? [{ href: "/qc", label: t.qualityControl, icon: CheckCircle }] : []),

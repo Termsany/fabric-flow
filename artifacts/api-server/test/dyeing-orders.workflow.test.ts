@@ -104,6 +104,7 @@ test("dyeing workflow summary routes completed orders to warehouse", () => {
   assert.equal(summary.currentState, "completed");
   assert.equal(summary.linkedRollCount, 2);
   assert.equal(summary.nextStep.route, "/warehouse");
+  assert.ok(Array.isArray(summary.allowedNextStatuses));
 });
 
 test("dyeing response exposes linked rolls and next-step guidance", () => {

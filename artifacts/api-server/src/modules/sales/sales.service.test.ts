@@ -24,6 +24,7 @@ test("salesService.createSalesOrder rejects tenant roll mismatch", async () => {
       findTenantRollIds: async () => [{ id: 10, status: "IN_STOCK", warehouseId: 3 }],
       createSalesOrder: async () => [],
       updateRollStatusForTenant: async () => undefined,
+      createWarehouseMovements: async () => [],
       insertAuditLog: async () => undefined,
       findSalesOrderById: async () => [],
       updateSalesOrder: async () => [],
@@ -62,6 +63,7 @@ test("salesService.updateSalesOrder marks delivered rolls as sold", async () => 
       updateRollStatusForTenant: async (tenantId, rollIds, status) => {
         calls.push({ tenantId, rollIds, status: status ?? "" });
       },
+      createWarehouseMovements: async () => [],
       insertAuditLog: async () => undefined,
       findSalesOrderById: async () => [{
         id: 77,

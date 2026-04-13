@@ -11,6 +11,7 @@ test("inventory operation inference supports inbound outbound and transfer", () 
   assert.equal(inferInventoryOperation({ fromWarehouseId: null, toWarehouseId: 1 }), "inbound");
   assert.equal(inferInventoryOperation({ fromWarehouseId: 1, toWarehouseId: null }), "outbound");
   assert.equal(inferInventoryOperation({ fromWarehouseId: 1, toWarehouseId: 2 }), "transfer");
+  assert.equal(inferInventoryOperation({ fromWarehouseId: 1, toWarehouseId: 1 }), "reserve");
 });
 
 test("stock derivation calculates current roll counts by warehouse", () => {
@@ -69,5 +70,26 @@ test("reserve requires currently stocked inventory", () => {
       currentWarehouseId: null,
     }),
     /not currently in warehouse/i,
+  );
+});
+
+test("stock derivation tracks reserved rolls without changing location", () => {
+  const stock = deriveStockByWarehouse([
+    { fabricRollId: 1, fromWarehouseId: null, toWarehouseId: 10, movedAt: "2026-01-01T00:00:00.000Z" },
+    { fabricRollId: 1, fromWarehouseId: 10, toWarehouseId: 10, movedAt: "2026-01-01T01:00:00.000Z" },
+  ]);
+
+  assert.equal(stock.rollLocations.get(1), 10);
+  assert.ok(stock.reservedRolls.has(1));
+});
+
+test("stock derivation rejects duplicate reserve movements", () => {
+  assert.throws(
+    () => deriveStockByWarehouse([
+      { fabricRollId: 1, fromWarehouseId: null, toWarehouseId: 10 },
+      { fabricRollId: 1, fromWarehouseId: 10, toWarehouseId: 10 },
+      { fabricRollId: 1, fromWarehouseId: 10, toWarehouseId: 10 },
+    ]),
+    /reserve the same roll more than once/i,
   );
 });

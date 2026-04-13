@@ -14,6 +14,7 @@ import adminTenantsRouter from "./admin-tenants";
 import settingsPaymentMethodsRouter from "./settings-payment-methods";
 import plansRouter from "../modules/plans/plans.routes";
 import operationalSearchRouter from "../modules/search/operational-search.routes";
+import notificationsRouter from "../modules/notifications/notifications.routes";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(billingRouter);
 router.use(plansRouter);
 router.use(settingsPaymentMethodsRouter);
 router.use(adminTenantsRouter);
+router.use(notificationsRouter);
 
 export default router;

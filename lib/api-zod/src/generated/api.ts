@@ -140,6 +140,7 @@ export const DeleteUserParams = zod.object({
  */
 export const ListProductionOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  batchId: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
   offset: zod.coerce.number().optional(),
@@ -149,6 +150,7 @@ export const ListProductionOrdersResponseItem = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
   orderNumber: zod.string(),
+  batchId: zod.string().nullish(),
   fabricType: zod.string(),
   gsm: zod.number(),
   width: zod.number(),
@@ -183,6 +185,7 @@ export const ListProductionOrdersResponseItem = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -200,6 +203,7 @@ export const CreateProductionOrderBody = zod.object({
   width: zod.number(),
   rawColor: zod.string(),
   quantity: zod.number(),
+  batchId: zod.string().optional(),
   notes: zod.string().optional(),
 });
 
@@ -214,6 +218,7 @@ export const GetProductionOrderResponse = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
   orderNumber: zod.string(),
+  batchId: zod.string().nullish(),
   fabricType: zod.string(),
   gsm: zod.number(),
   width: zod.number(),
@@ -248,6 +253,7 @@ export const GetProductionOrderResponse = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -303,6 +309,7 @@ export const UpdateProductionOrderResponse = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -352,6 +359,7 @@ const FabricRollWorkflowSummary = zod.object({
     description: zod.string().nullable(),
     route: zod.string().nullable(),
   }),
+  allowedNextStatuses: zod.array(zod.string()),
 });
 
 const FabricRollTraceability = zod.object({
@@ -678,6 +686,7 @@ export const ListDyeingOrdersResponseItem = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -728,6 +737,7 @@ export const GetDyeingOrderResponse = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -773,6 +783,7 @@ export const UpdateDyeingOrderResponse = zod.object({
       description: zod.string().nullable(),
       route: zod.string().nullable(),
     }),
+    allowedNextStatuses: zod.array(zod.string()),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -1028,6 +1039,15 @@ export const ListSalesOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   rollIds: zod.array(zod.number()),
   invoiceNumber: zod.string().nullish(),
+  workflow: zod.object({
+    currentState: zod.string(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+    allowedNextStatuses: zod.array(zod.string()),
+  }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -1104,6 +1124,15 @@ export const GetSalesOrderResponse = zod.object({
   rollIds: zod.array(zod.number()),
   stockSources: zod.array(SalesOrderStockSource).optional(),
   invoiceNumber: zod.string().nullish(),
+  workflow: zod.object({
+    currentState: zod.string(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+    allowedNextStatuses: zod.array(zod.string()),
+  }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -1133,6 +1162,15 @@ export const UpdateSalesOrderResponse = zod.object({
   rollIds: zod.array(zod.number()),
   stockSources: zod.array(SalesOrderStockSource).optional(),
   invoiceNumber: zod.string().nullish(),
+  workflow: zod.object({
+    currentState: zod.string(),
+    nextStep: zod.object({
+      action: zod.string().nullable(),
+      description: zod.string().nullable(),
+      route: zod.string().nullable(),
+    }),
+    allowedNextStatuses: zod.array(zod.string()),
+  }).optional(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -1221,6 +1259,23 @@ export const GetProductionByMonthResponse = zod.array(
 );
 
 /**
+ * @summary Get onboarding status
+ */
+export const GetOnboardingStatusResponseStep = zod.object({
+  key: zod.string(),
+  completed: zod.boolean(),
+  route: zod.string(),
+});
+
+export const GetOnboardingStatusResponse = zod.object({
+  tenantId: zod.number(),
+  isFirstRun: zod.boolean(),
+  completedCount: zod.number(),
+  totalCount: zod.number(),
+  steps: zod.array(GetOnboardingStatusResponseStep),
+});
+
+/**
  * @summary List audit logs
  */
 export const ListAuditLogsQueryParams = zod.object({
@@ -1241,6 +1296,51 @@ export const ListAuditLogsResponseItem = zod.object({
   createdAt: zod.string(),
 });
 export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem);
+
+/**
+ * @summary List notifications
+ */
+export const ListNotificationsQueryParams = zod.object({
+  unreadOnly: zod.coerce.boolean().optional(),
+  limit: zod.coerce.number().optional(),
+  offset: zod.coerce.number().optional(),
+  refresh: zod.coerce.boolean().optional(),
+});
+
+export const Notification = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  userId: zod.number().nullish(),
+  type: zod.string(),
+  title: zod.string(),
+  message: zod.string(),
+  severity: zod.string(),
+  entityType: zod.string().nullish(),
+  entityId: zod.number().nullish(),
+  isRead: zod.boolean(),
+  readAt: zod.string().nullish(),
+  createdAt: zod.string(),
+});
+
+export const ListNotificationsResponse = zod.array(Notification);
+
+/**
+ * @summary Mark notification read
+ */
+export const MarkNotificationReadParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkNotificationReadResponse = Notification;
+
+/**
+ * @summary Mark notifications read
+ */
+export const MarkNotificationsReadBody = zod.object({
+  ids: zod.array(zod.number()),
+});
+
+export const MarkNotificationsReadResponse = zod.array(Notification);
 
 /**
  * @summary Get tenant billing subscription snapshot

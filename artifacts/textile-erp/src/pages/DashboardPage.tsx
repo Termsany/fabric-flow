@@ -10,6 +10,8 @@ import {
   useGetRollStatusBreakdown,
   useGetProductionByMonth,
   useGetRecentActivity,
+  useGetSalesReport,
+  useGetOnboardingStatus,
 } from "@workspace/api-client-react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -70,10 +72,14 @@ export function DashboardPage() {
   const { t, lang } = useLang();
   const { user } = useAuth();
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
+  const { data: onboardingStatus } = useGetOnboardingStatus({
+    query: { enabled: Boolean(user?.role && isTenantAdminRole(user.role)) },
+  });
   const { data: qcSummary } = useGetQcReportSummary();
   const { data: breakdown } = useGetRollStatusBreakdown();
   const { data: monthlyData } = useGetProductionByMonth();
   const { data: activity } = useGetRecentActivity({ limit: 10 });
+  const { data: salesReport, isLoading: salesReportLoading } = useGetSalesReport({ recentLimit: 5 });
 
   if (statsLoading) {
     return (
@@ -118,65 +124,88 @@ export function DashboardPage() {
     totalRevenue: t.dashboardTotalRevenue,
   };
   const qcOutcomes = qcSummary ?? stats?.qcOutcomes;
-  const isFirstRun = Boolean(
-    stats
-      && (stats.totalRolls ?? 0) === 0
-      && (stats.activeProductionOrders ?? 0) === 0
-      && (stats.totalCustomers ?? 0) === 0
-      && (activity || []).length === 0,
+  const hideKey = user?.tenantId ? `textile_erp_onboarding_hide_${user.tenantId}` : null;
+  const hasDismissed = hideKey ? Boolean(localStorage.getItem(hideKey)) : false;
+  const showOnboarding = Boolean(
+    onboardingStatus
+    && onboardingStatus.steps.some((step) => !step.completed)
+    && user?.role
+    && isTenantAdminRole(user.role)
+    && !hasDismissed,
   );
-  const showOnboarding = isFirstRun && Boolean(user?.role && isTenantAdminRole(user.role));
 
   return (
     <Layout>
       <PageHeader title={t.dashboard} />
 
-      {showOnboarding && (
+      {showOnboarding && onboardingStatus && (
         <div className="mb-8 rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="text-sm font-medium text-amber-700">{t.onboardingTitle}</div>
               <div className="mt-1 text-2xl font-semibold text-slate-900">{t.onboardingSubtitle}</div>
               <p className="mt-2 text-sm text-slate-600">{t.onboardingIntro}</p>
+              <div className="mt-3 text-xs text-slate-500">
+                {t.onboardingProgress.replace("{completed}", String(onboardingStatus.completedCount)).replace("{total}", String(onboardingStatus.totalCount))}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/users" className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white">
-                {t.addUser}
-              </Link>
-              <Link href="/subscription" className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800">
-                {t.onboardingGoSubscription}
-              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  if (hideKey) {
+                    localStorage.setItem(hideKey, new Date().toISOString());
+                  }
+                }}
+                className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800"
+              >
+                {t.onboardingDismiss}
+              </button>
             </div>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-amber-100 bg-white p-4">
-              <div className="text-xs text-slate-500">{t.onboardingStepUsersTitle}</div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">{t.onboardingStepUsersBody}</div>
-              <Link href="/users" className="mt-3 inline-flex text-sm font-medium text-indigo-700">
-                {t.onboardingStepUsersCta}
-              </Link>
-            </div>
-            <div className="rounded-xl border border-amber-100 bg-white p-4">
-              <div className="text-xs text-slate-500">{t.onboardingStepSubscriptionTitle}</div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">{t.onboardingStepSubscriptionBody}</div>
-              <Link href="/billing" className="mt-3 inline-flex text-sm font-medium text-indigo-700">
-                {t.onboardingStepSubscriptionCta}
-              </Link>
-            </div>
-            <div className="rounded-xl border border-amber-100 bg-white p-4">
-              <div className="text-xs text-slate-500">{t.onboardingStepRollsTitle}</div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">{t.onboardingStepRollsBody}</div>
-              <Link href="/fabric-rolls" className="mt-3 inline-flex text-sm font-medium text-indigo-700">
-                {t.onboardingStepRollsCta}
-              </Link>
-            </div>
-            <div className="rounded-xl border border-amber-100 bg-white p-4">
-              <div className="text-xs text-slate-500">{t.onboardingStepSetupTitle}</div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">{t.onboardingStepSetupBody}</div>
-              <Link href="/production-orders" className="mt-3 inline-flex text-sm font-medium text-indigo-700">
-                {t.onboardingStepSetupCta}
-              </Link>
-            </div>
+            {onboardingStatus.steps.map((step) => {
+              const content = {
+                users: {
+                  title: t.onboardingStepUsersTitle,
+                  body: t.onboardingStepUsersBody,
+                  cta: t.onboardingStepUsersCta,
+                },
+                billing: {
+                  title: t.onboardingStepSubscriptionTitle,
+                  body: t.onboardingStepSubscriptionBody,
+                  cta: t.onboardingStepSubscriptionCta,
+                },
+                rolls: {
+                  title: t.onboardingStepRollsTitle,
+                  body: t.onboardingStepRollsBody,
+                  cta: t.onboardingStepRollsCta,
+                },
+                production: {
+                  title: t.onboardingStepSetupTitle,
+                  body: t.onboardingStepSetupBody,
+                  cta: t.onboardingStepSetupCta,
+                },
+              } as Record<string, { title: string; body: string; cta: string }>;
+
+              const stepContent = content[step.key];
+              if (!stepContent) return null;
+
+              return (
+                <div key={step.key} className="rounded-xl border border-amber-100 bg-white p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-slate-500">{stepContent.title}</div>
+                    <span className={`text-xs font-medium ${step.completed ? "text-emerald-600" : "text-amber-600"}`}>
+                      {step.completed ? t.onboardingDone : t.onboardingPending}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900">{stepContent.body}</div>
+                  <Link href={step.route} className="mt-3 inline-flex text-sm font-medium text-indigo-700">
+                    {stepContent.cta}
+                  </Link>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -232,6 +261,67 @@ export function DashboardPage() {
             { label: labels.deliveredRevenue, value: stats?.salesSummary.deliveredRevenue || 0, tone: "text-indigo-600" },
           ]}
         />
+      </div>
+
+      <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-slate-800">{t.recentSales}</h3>
+            <Link href="/sales" className="text-sm font-medium text-indigo-600">
+              {t.viewAll}
+            </Link>
+          </div>
+          <div className="mt-4 space-y-3">
+            {salesReportLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse"></div>
+              ))
+            ) : (salesReport?.recentSales || []).length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">
+                {t.recentSalesEmpty}
+              </div>
+            ) : (
+              (salesReport?.recentSales || []).map((sale) => (
+                <div key={sale.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{sale.orderNumber}</div>
+                    <div className="text-xs text-slate-400">{formatDate(sale.createdAt, lang)}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge status={sale.status} />
+                    <div className="text-sm font-semibold text-slate-800">
+                      {formatNumber(sale.totalAmount, lang)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-slate-800">{t.readyInventory}</h3>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">{labels.availableForSale}</span>
+              <span className="text-lg font-bold text-emerald-600">
+                {formatNumber(stats?.availableInventory.availableForSale || 0, lang)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">{t.reserved}</span>
+              <span className="text-lg font-bold text-orange-600">
+                {formatNumber(stats?.availableInventory.reserved || 0, lang)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">{labels.warehouseStock}</span>
+              <span className="text-lg font-bold text-slate-800">
+                {formatNumber(stats?.availableInventory.warehouseStock || 0, lang)}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Charts */}

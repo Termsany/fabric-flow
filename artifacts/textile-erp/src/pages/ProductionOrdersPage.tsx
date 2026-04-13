@@ -24,6 +24,7 @@ export function ProductionOrdersPage() {
     width: "",
     rawColor: "",
     quantity: "",
+    batchId: "",
     notes: "",
   });
 
@@ -35,7 +36,7 @@ export function ProductionOrdersPage() {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListProductionOrdersQueryKey() });
         setShowCreate(false);
-        setForm({ fabricType: "", gsm: "", width: "", rawColor: "", quantity: "", notes: "" });
+        setForm({ fabricType: "", gsm: "", width: "", rawColor: "", quantity: "", batchId: "", notes: "" });
       },
     },
   });
@@ -49,6 +50,7 @@ export function ProductionOrdersPage() {
         width: parseFloat(form.width),
         rawColor: form.rawColor,
         quantity: parseInt(form.quantity),
+        batchId: form.batchId || undefined,
         notes: form.notes || undefined,
       },
     });
@@ -73,7 +75,7 @@ export function ProductionOrdersPage() {
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder={`${t.search} ${t.orderNumber} / ID...`}
+          placeholder={`${t.search} ${t.orderNumber} / ${t.batchId} / ID...`}
           className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
       </div>
@@ -96,6 +98,7 @@ export function ProductionOrdersPage() {
                   { key: "gsm", label: t.gsm, type: "number" },
                   { key: "width", label: t.width, type: "number" },
                   { key: "quantity", label: t.quantity, type: "number" },
+                  { key: "batchId", label: t.batchId, type: "text", optional: true },
                 ].map(({ key, label, type }) => (
                   <div key={key}>
                     <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
@@ -103,7 +106,7 @@ export function ProductionOrdersPage() {
                       type={type}
                       value={form[key as keyof typeof form]}
                       onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                      required
+                      required={key !== "batchId"}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
@@ -145,6 +148,7 @@ export function ProductionOrdersPage() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.orderNumber}</th>
+                <th className="text-start px-4 py-3 font-medium text-slate-600">{t.batchId}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.fabricType}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.rawColor}</th>
                 <th className="text-start px-4 py-3 font-medium text-slate-600">{t.gsm}</th>
@@ -159,7 +163,7 @@ export function ProductionOrdersPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-slate-200 rounded animate-pulse"></div>
                       </td>
@@ -168,7 +172,7 @@ export function ProductionOrdersPage() {
                 ))
               ) : (orders || []).length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <div>{t.noOrders}</div>
                       <div className="text-xs text-slate-500">{t.emptyProductionOrdersHint}</div>
@@ -186,6 +190,7 @@ export function ProductionOrdersPage() {
                 (orders || []).map((order) => (
                   <tr key={order.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs font-medium text-slate-700">{order.orderNumber}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{order.batchId || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{order.fabricType}</td>
                     <td className="px-4 py-3 text-slate-600">{order.rawColor}</td>
                     <td className="px-4 py-3 text-slate-600">{order.gsm}</td>

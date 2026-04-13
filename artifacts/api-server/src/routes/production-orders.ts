@@ -22,6 +22,7 @@ import {
 } from "./production-orders.workflow";
 import { pickAuditFields, writeOperationalAuditLog } from "../utils/audit-log";
 import { normalizeIdentifierSearch } from "../utils/identifiers";
+import { assertProductionOrderTransitionAllowed, WorkflowTransitionError } from "../modules/workflow/transition-guards";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ function formatOrder(o: typeof productionOrdersTable.$inferSelect) {
     id: o.id,
     tenantId: o.tenantId,
     orderNumber: o.orderNumber,
+    batchId: o.batchId ?? null,
     fabricType: o.fabricType,
     gsm: o.gsm,
     width: o.width,
@@ -66,6 +68,18 @@ function respondFabricRollLinkError(res: { status: (code: number) => { json: (bo
   return false;
 }
 
+function respondWorkflowTransitionError(
+  res: { status: (code: number) => { json: (body: unknown) => unknown } },
+  error: unknown,
+): boolean {
+  if (error instanceof WorkflowTransitionError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+
+  return false;
+}
+
 router.get("/production-orders", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
   const params = ListProductionOrdersQueryParams.safeParse(req.query);
   if (!params.success) {
@@ -77,9 +91,15 @@ router.get("/production-orders", requireAuth, requireTenantRole(["production_use
   if (params.data.status) {
     conditions.push(eq(productionOrdersTable.status, params.data.status));
   }
+  if (params.data.batchId) {
+    conditions.push(ilike(productionOrdersTable.batchId, `%${params.data.batchId}%`));
+  }
   const identifierSearch = normalizeIdentifierSearch(params.data.search);
   if (identifierSearch) {
-    const searchConditions = [ilike(productionOrdersTable.orderNumber, identifierSearch.pattern)];
+    const searchConditions = [
+      ilike(productionOrdersTable.orderNumber, identifierSearch.pattern),
+      ilike(productionOrdersTable.batchId, identifierSearch.pattern),
+    ];
     if (identifierSearch.numericId != null) {
       searchConditions.push(eq(productionOrdersTable.id, identifierSearch.numericId));
     }
@@ -106,13 +126,14 @@ router.post("/production-orders", requireAuth, requireTenantRole(["production_us
 
   // Generate unique order number
   const orderNumber = `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const batchId = `BATCH-${Date.now()}`;
+  const batchId = parsed.data.batchId?.trim() || `BATCH-${Date.now()}`;
 
   try {
     const { order, rolls } = await db.transaction(async (tx) => {
       const [order] = await tx.insert(productionOrdersTable).values({
         tenantId: req.user!.tenantId,
         orderNumber,
+        batchId,
         fabricType,
         gsm,
         width,
@@ -222,6 +243,18 @@ router.patch("/production-orders/:id", requireAuth, requireTenantRole(["producti
   if (!existing) {
     res.status(404).json({ error: "Production order not found" });
     return;
+  }
+
+  if (parsed.data.status != null && parsed.data.status !== existing.status) {
+    try {
+      assertProductionOrderTransitionAllowed(existing.status, parsed.data.status);
+    } catch (error) {
+      if (respondWorkflowTransitionError(res, error)) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   const [order] = await db.update(productionOrdersTable).set(updates).where(
