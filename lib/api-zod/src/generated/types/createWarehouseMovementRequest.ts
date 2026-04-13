@@ -8,7 +8,10 @@
 
 export interface CreateWarehouseMovementRequest {
   fabricRollId: number;
+  movementType?: "inbound" | "outbound" | "transfer" | "reserve" | "adjustment";
   fromWarehouseId?: number;
-  toWarehouseId: number;
+  toWarehouseId?: number;
+  fromWarehouseLocationId?: number;
+  toWarehouseLocationId?: number;
   reason?: string;
 }

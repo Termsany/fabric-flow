@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tenantsTable } from "./tenants";
@@ -22,6 +22,7 @@ export const productionOrdersTable = pgTable("production_orders", {
 }, (table) => ({
   productionOrdersTenantIdx: index("production_orders_tenant_id_idx").on(table.tenantId),
   productionOrdersBatchIdx: index("production_orders_batch_id_idx").on(table.batchId),
+  productionOrdersBatchUnique: uniqueIndex("production_orders_batch_id_unique").on(table.batchId),
 }));
 
 export const insertProductionOrderSchema = createInsertSchema(productionOrdersTable)

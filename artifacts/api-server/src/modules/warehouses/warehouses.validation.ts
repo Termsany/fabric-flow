@@ -17,14 +17,39 @@ import {
 const createWarehouseMovementSchema = CreateWarehouseMovementBody.extend({
   fabricRollId: positiveInteger("fabricRollId"),
   fromWarehouseId: positiveInteger("fromWarehouseId").optional(),
-  toWarehouseId: positiveInteger("toWarehouseId"),
+  toWarehouseId: positiveInteger("toWarehouseId").optional(),
+  fromWarehouseLocationId: positiveInteger("fromWarehouseLocationId").optional(),
+  toWarehouseLocationId: positiveInteger("toWarehouseLocationId").optional(),
+  movementType: z.enum(["inbound", "outbound", "transfer", "reserve", "adjustment"]).optional(),
   reason: optionalText(),
 }).superRefine((value, ctx) => {
-  if (value.fromWarehouseId != null && value.fromWarehouseId === value.toWarehouseId) {
+  const type = value.movementType ?? "transfer";
+  if (type === "transfer" && value.fromWarehouseId != null && value.fromWarehouseId === value.toWarehouseId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "fromWarehouseId and toWarehouseId must be different",
       path: ["toWarehouseId"],
+    });
+  }
+  if (type === "inbound" && value.toWarehouseId == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "toWarehouseId is required for inbound movements",
+      path: ["toWarehouseId"],
+    });
+  }
+  if (type === "outbound" && value.fromWarehouseId == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "fromWarehouseId is required for outbound movements",
+      path: ["fromWarehouseId"],
+    });
+  }
+  if (type === "adjustment" && value.fromWarehouseId == null && value.toWarehouseId == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "adjustment must include fromWarehouseId or toWarehouseId",
+      path: ["fromWarehouseId"],
     });
   }
 });

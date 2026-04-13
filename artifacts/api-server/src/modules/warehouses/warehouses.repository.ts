@@ -81,6 +81,7 @@ export const warehousesRepository = {
       fabricRollId: warehouseMovementsTable.fabricRollId,
       fromWarehouseId: warehouseMovementsTable.fromWarehouseId,
       toWarehouseId: warehouseMovementsTable.toWarehouseId,
+      movementType: warehouseMovementsTable.movementType,
       movedAt: warehouseMovementsTable.movedAt,
       createdAt: warehouseMovementsTable.createdAt,
     }).from(warehouseMovementsTable)
@@ -98,10 +99,17 @@ export const warehousesRepository = {
     return db.insert(warehouseMovementsTable).values(values).returning();
   },
 
-  updateFabricRollWarehouse(tenantId: number, fabricRollId: number, warehouseId: number | null) {
+  updateFabricRollWarehouse(
+    tenantId: number,
+    fabricRollId: number,
+    warehouseId: number | null,
+    warehouseLocationId: number | null = null,
+    status?: typeof fabricRollsTable.$inferInsert.status,
+  ) {
     return db.update(fabricRollsTable).set({
       warehouseId,
-      status: FABRIC_ROLL_WORKFLOW_STATUS.inStock,
+      warehouseLocationId,
+      ...(status ? { status } : {}),
     }).where(
       and(eq(fabricRollsTable.id, fabricRollId), eq(fabricRollsTable.tenantId, tenantId)),
     );

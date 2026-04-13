@@ -1,5 +1,5 @@
 import { ensureUsageWithinLimit } from "../../lib/billing";
-import { inferInventoryOperation } from "./warehouses.inventory";
+import { inferInventoryOperation, resolveInventoryOperation } from "./warehouses.inventory";
 import {
   type AuditLogInsert,
   type FabricRollRow,
@@ -25,15 +25,18 @@ export function formatWarehouse(w: WarehouseRow) {
 }
 
 export function formatMovement(m: WarehouseMovementRow) {
+  const resolvedOperation = resolveInventoryOperation(m);
   return {
     id: m.id,
     tenantId: m.tenantId,
     fabricRollId: m.fabricRollId,
     fromWarehouseId: m.fromWarehouseId ?? null,
     toWarehouseId: m.toWarehouseId ?? null,
+    fromWarehouseLocationId: m.fromWarehouseLocationId ?? null,
+    toWarehouseLocationId: m.toWarehouseLocationId ?? null,
     movedById: m.movedById,
     reason: m.reason ?? null,
-    movementType: inferInventoryOperation(m),
+    movementType: resolvedOperation ?? inferInventoryOperation(m),
     movedAt: m.movedAt.toISOString(),
     createdAt: m.createdAt.toISOString(),
   };
@@ -51,10 +54,23 @@ export type WarehousesServiceDependencies = {
     ) => Promise<WarehouseMovementRow[]>;
     listWarehouseMovementsForTenant: (
       tenantId: number,
-    ) => Promise<Array<{ fabricRollId: number; fromWarehouseId: number | null; toWarehouseId: number | null; movedAt: Date; createdAt: Date }>>;
+    ) => Promise<Array<{
+      fabricRollId: number;
+      fromWarehouseId: number | null;
+      toWarehouseId: number | null;
+      movementType: string | null;
+      movedAt: Date;
+      createdAt: Date;
+    }>>;
     findFabricRollById: (tenantId: number, id: number) => Promise<FabricRollRow[]>;
     createWarehouseMovement: (values: WarehouseMovementInsert) => Promise<WarehouseMovementRow[]>;
-    updateFabricRollWarehouse: (tenantId: number, fabricRollId: number, warehouseId: number | null) => Promise<unknown>;
+    updateFabricRollWarehouse: (
+      tenantId: number,
+      fabricRollId: number,
+      warehouseId: number | null,
+      warehouseLocationId?: number | null,
+      status?: string,
+    ) => Promise<unknown>;
     insertAuditLog: (values: AuditLogInsert) => Promise<unknown>;
     listInventoryStatusCounts: (tenantId: number) => Promise<InventoryStatusCount[]>;
     listWarehouseStock: (tenantId: number) => Promise<WarehouseStockRow[]>;

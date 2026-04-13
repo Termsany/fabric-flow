@@ -1,9 +1,10 @@
-export type InventoryOperation = "inbound" | "outbound" | "transfer" | "reserve";
+export type InventoryOperation = "inbound" | "outbound" | "transfer" | "reserve" | "adjustment";
 
 export type InventoryMovementInput = {
   fabricRollId: number;
   fromWarehouseId: number | null;
   toWarehouseId: number | null;
+  movementType?: InventoryOperation | null;
   movedAt?: Date | string;
   createdAt?: Date | string;
 };
@@ -38,6 +39,28 @@ export function inferInventoryOperation(movement: Pick<InventoryMovementInput, "
   }
 
   return "transfer";
+}
+
+export function resolveInventoryOperation(movement: Pick<InventoryMovementInput, "fromWarehouseId" | "toWarehouseId" | "movementType">) {
+  if (movement.movementType === "reserve") {
+    return "reserve";
+  }
+
+  if (movement.movementType === "adjustment") {
+    if (movement.toWarehouseId != null) {
+      return "inbound";
+    }
+    if (movement.fromWarehouseId != null) {
+      return "outbound";
+    }
+    return null;
+  }
+
+  if (movement.movementType) {
+    return movement.movementType;
+  }
+
+  return inferInventoryOperation(movement);
 }
 
 export function validateInventoryOperation(input: {
@@ -106,6 +129,22 @@ export function validateInventoryOperation(input: {
     return;
   }
 
+  if (input.operation === "adjustment") {
+    if (input.fromWarehouseId != null && input.toWarehouseId != null) {
+      throw new InventoryStockError("Adjustment cannot include both source and destination warehouses");
+    }
+
+    if (input.fromWarehouseId == null && input.toWarehouseId == null) {
+      throw new InventoryStockError("Adjustment requires a source or destination warehouse");
+    }
+
+    if (input.fromWarehouseId != null && input.currentWarehouseId == null) {
+      throw new InventoryStockError("Adjustment outbound requires stock to be in warehouse");
+    }
+
+    return;
+  }
+
   if (input.currentWarehouseId == null) {
     throw new InventoryStockError("Cannot reserve stock that is not currently in warehouse");
   }
@@ -116,7 +155,7 @@ export function deriveStockByWarehouse(movements: InventoryMovementInput[]) {
   const reservedRolls = new Set<number>();
 
   for (const movement of [...movements].sort((a, b) => movementTime(a) - movementTime(b))) {
-    const operation = inferInventoryOperation(movement);
+    const operation = resolveInventoryOperation(movement) ?? inferInventoryOperation(movement);
     const currentWarehouseId = rollLocations.get(movement.fabricRollId) ?? null;
 
     validateInventoryOperation({

@@ -374,18 +374,25 @@ export interface WarehouseMovement {
   fromWarehouseId?: number | null;
   /** @nullable */
   toWarehouseId?: number | null;
+  /** @nullable */
+  fromWarehouseLocationId?: number | null;
+  /** @nullable */
+  toWarehouseLocationId?: number | null;
   movedById: number;
   /** @nullable */
   reason?: string | null;
-  movementType?: string;
+  movementType?: "inbound" | "outbound" | "transfer" | "reserve" | "adjustment";
   movedAt: string;
   createdAt: string;
 }
 
 export interface CreateWarehouseMovementRequest {
   fabricRollId: number;
+  movementType?: "inbound" | "outbound" | "transfer" | "reserve" | "adjustment";
   fromWarehouseId?: number;
-  toWarehouseId: number;
+  toWarehouseId?: number;
+  fromWarehouseLocationId?: number;
+  toWarehouseLocationId?: number;
   reason?: string;
 }
 

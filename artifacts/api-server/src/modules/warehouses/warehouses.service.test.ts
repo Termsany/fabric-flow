@@ -4,7 +4,13 @@ import { createWarehousesService } from "./warehouses.service";
 
 test("warehousesService.createWarehouseMovement creates a movement and updates the roll location", async () => {
   const calls: Array<
-    | { kind: "update-roll"; tenantId: number; fabricRollId: number; warehouseId: number | null }
+    | {
+        kind: "update-roll";
+        tenantId: number;
+        fabricRollId: number;
+        warehouseId: number | null;
+        warehouseLocationId: number | null;
+      }
     | { kind: "audit"; entityId: number; tenantId: number; userId: number }
   > = [];
 
@@ -51,13 +57,16 @@ test("warehousesService.createWarehouseMovement creates a movement and updates t
         fabricRollId: 15,
         fromWarehouseId: 21,
         toWarehouseId: 22,
+        movementType: "transfer",
+        fromWarehouseLocationId: null,
+        toWarehouseLocationId: null,
         movedById: 9,
         reason: "Move to picking zone",
         movedAt: new Date("2026-01-02T10:00:00.000Z"),
         createdAt: new Date("2026-01-02T10:00:00.000Z"),
       }],
-      updateFabricRollWarehouse: async (tenantId, fabricRollId, warehouseId) => {
-        calls.push({ kind: "update-roll", tenantId, fabricRollId, warehouseId });
+      updateFabricRollWarehouse: async (tenantId, fabricRollId, warehouseId, warehouseLocationId) => {
+        calls.push({ kind: "update-roll", tenantId, fabricRollId, warehouseId, warehouseLocationId: warehouseLocationId ?? null });
       },
       insertAuditLog: async (values) => {
         const payload = values as { entityId: number; tenantId: number; userId: number };
@@ -83,7 +92,7 @@ test("warehousesService.createWarehouseMovement creates a movement and updates t
 
   assert.ok("data" in result);
   assert.deepEqual(calls, [
-    { kind: "update-roll", tenantId: 4, fabricRollId: 15, warehouseId: 22 },
+    { kind: "update-roll", tenantId: 4, fabricRollId: 15, warehouseId: 22, warehouseLocationId: null },
     { kind: "audit", entityId: 70, tenantId: 4, userId: 9 },
   ]);
 });

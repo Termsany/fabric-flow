@@ -14,10 +14,14 @@ export interface WarehouseMovement {
   fromWarehouseId?: number | null;
   /** @nullable */
   toWarehouseId?: number | null;
+  /** @nullable */
+  fromWarehouseLocationId?: number | null;
+  /** @nullable */
+  toWarehouseLocationId?: number | null;
   movedById: number;
   /** @nullable */
   reason?: string | null;
-  movementType?: string;
+  movementType?: "inbound" | "outbound" | "transfer" | "reserve" | "adjustment";
   movedAt: string;
   createdAt: string;
 }

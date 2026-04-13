@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, productionOrdersTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
 import { FABRIC_ROLL_WORKFLOW_STATUS, PRODUCTION_ORDER_WORKFLOW_STATUS } from "@workspace/api-zod";
-import { eq, and, desc, ilike, or } from "drizzle-orm";
+import { eq, and, desc, ilike, or, like } from "drizzle-orm";
 import { requireAuth, requireTenantRole } from "../lib/auth";
 import { formatValidationError } from "../lib/request-validation";
 import {
@@ -23,6 +23,7 @@ import {
 import { pickAuditFields, writeOperationalAuditLog } from "../utils/audit-log";
 import { normalizeIdentifierSearch } from "../utils/identifiers";
 import { assertProductionOrderTransitionAllowed, WorkflowTransitionError } from "../modules/workflow/transition-guards";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -80,6 +81,52 @@ function respondWorkflowTransitionError(
   return false;
 }
 
+export function mapProductionOrderCreateError(error: unknown): { status: number; message: string } | null {
+  const err = error as { code?: string; message?: string };
+  const code = err?.code;
+  const message = err?.message?.toLowerCase() ?? "";
+
+  if (code === "42703" || message.includes("batch_id")) {
+    return {
+      status: 500,
+      message: "Database schema is out of date for production orders. Apply migrations and try again.",
+    };
+  }
+
+  if (code === "23502") {
+    return { status: 400, message: "Required production order fields are missing." };
+  }
+
+  if (code === "22P02") {
+    return { status: 400, message: "Production order fields have invalid types." };
+  }
+
+  return null;
+}
+
+export function computeNextBatchId(lastBatchId: string | null, now: Date) {
+  const year = now.getFullYear();
+  const prefix = `BATCH-${year}-`;
+  const lastId = lastBatchId ?? "";
+  const lastSeq = lastId.startsWith(prefix) ? Number(lastId.slice(prefix.length)) : 0;
+  const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+  const padded = String(nextSeq).padStart(4, "0");
+  return `${prefix}${padded}`;
+}
+
+async function generateNextBatchId() {
+  const year = new Date().getFullYear();
+  const prefix = `BATCH-${year}-`;
+  const [latest] = await db
+    .select({ batchId: productionOrdersTable.batchId })
+    .from(productionOrdersTable)
+    .where(like(productionOrdersTable.batchId, `${prefix}%`))
+    .orderBy(desc(productionOrdersTable.batchId))
+    .limit(1);
+
+  return computeNextBatchId(latest?.batchId ?? null, new Date());
+}
+
 router.get("/production-orders", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
   const params = ListProductionOrdersQueryParams.safeParse(req.query);
   if (!params.success) {
@@ -126,65 +173,85 @@ router.post("/production-orders", requireAuth, requireTenantRole(["production_us
 
   // Generate unique order number
   const orderNumber = `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const batchId = parsed.data.batchId?.trim() || `BATCH-${Date.now()}`;
-
   try {
-    const { order, rolls } = await db.transaction(async (tx) => {
-      const [order] = await tx.insert(productionOrdersTable).values({
-        tenantId: req.user!.tenantId,
-        orderNumber,
-        batchId,
-        fabricType,
-        gsm,
-        width,
-        rawColor,
-        quantity,
-        status: PRODUCTION_ORDER_WORKFLOW_STATUS.inProgress,
-        notes: notes ?? null,
-        rollsGenerated: quantity,
-      }).returning();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const batchId = await generateNextBatchId();
+      try {
+        const { order, rolls } = await db.transaction(async (tx) => {
+          const [order] = await tx.insert(productionOrdersTable).values({
+            tenantId: req.user!.tenantId,
+            orderNumber,
+            batchId,
+            fabricType,
+            gsm,
+            width,
+            rawColor,
+            quantity,
+            status: PRODUCTION_ORDER_WORKFLOW_STATUS.inProgress,
+            notes: notes ?? null,
+            rollsGenerated: quantity,
+          }).returning();
 
-      const rollsToInsert = Array.from({ length: quantity }, (_, i) => {
-        const rollCode = `${orderNumber}-R${String(i + 1).padStart(3, "0")}`;
-        return {
-          tenantId: req.user!.tenantId,
-          rollCode,
-          batchId,
-          productionOrderId: order.id,
-          warehouseId: null,
-          length: Math.round((Math.random() * 30 + 20) * 10) / 10, // 20-50 meters
-          weight: Math.round((Math.random() * 20 + 10) * 10) / 10, // 10-30 kg
-          color: rawColor,
-          gsm,
-          width,
-          fabricType,
-          status: FABRIC_ROLL_WORKFLOW_STATUS.inProduction,
-          qrCode: rollCode,
-          notes: null,
-        };
-      });
+          const rollsToInsert = Array.from({ length: quantity }, (_, i) => {
+            const rollCode = `${orderNumber}-R${String(i + 1).padStart(3, "0")}`;
+            return {
+              tenantId: req.user!.tenantId,
+              rollCode,
+              batchId,
+              productionOrderId: order.id,
+              warehouseId: null,
+              length: Math.round((Math.random() * 30 + 20) * 10) / 10, // 20-50 meters
+              weight: Math.round((Math.random() * 20 + 10) * 10) / 10, // 10-30 kg
+              color: rawColor,
+              gsm,
+              width,
+              fabricType,
+              status: FABRIC_ROLL_WORKFLOW_STATUS.inProduction,
+              qrCode: rollCode,
+              notes: null,
+            };
+          });
 
-      const rolls = await tx.insert(fabricRollsTable).values(rollsToInsert).returning();
-      const response = formatProductionOrderResponse(order, rolls);
+          const rolls = await tx.insert(fabricRollsTable).values(rollsToInsert).returning();
+          const response = formatProductionOrderResponse(order, rolls);
 
-      await tx.insert(auditLogsTable).values({
-        tenantId: req.user!.tenantId,
-        userId: req.user!.userId,
-        entityType: "production_order",
-        entityId: order.id,
-        action: "CREATE",
-        changes: JSON.stringify({
-          orderNumber,
-          quantity,
-          fabricRollIds: response.fabricRollIds,
-        }),
-      });
+          await tx.insert(auditLogsTable).values({
+            tenantId: req.user!.tenantId,
+            userId: req.user!.userId,
+            entityType: "production_order",
+            entityId: order.id,
+            action: "CREATE",
+            changes: JSON.stringify({
+              orderNumber,
+              quantity,
+              fabricRollIds: response.fabricRollIds,
+            }),
+          });
 
-      return { order, rolls };
-    });
+          return { order, rolls };
+        });
 
-    res.status(201).json(GetProductionOrderResponse.parse(formatProductionOrderResponse(order, rolls)));
+        res.status(201).json(GetProductionOrderResponse.parse(formatProductionOrderResponse(order, rolls)));
+        return;
+      } catch (error) {
+        const code = (error as { code?: string; message?: string })?.code;
+        const message = (error as { message?: string })?.message?.toLowerCase() ?? "";
+        const isBatchConflict = code === "23505" && message.includes("batch");
+        if (isBatchConflict) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    res.status(500).json({ error: "Failed to generate a unique batch number. Please retry." });
+    return;
   } catch (error) {
+    const mapped = mapProductionOrderCreateError(error);
+    if (mapped) {
+      logger.error({ err: error, tenantId: req.user!.tenantId }, "Production order creation failed");
+      res.status(mapped.status).json({ error: mapped.message });
+      return;
+    }
     if (respondFabricRollLinkError(res, error)) {
       return;
     }

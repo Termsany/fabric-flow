@@ -917,7 +917,9 @@ export const ListWarehouseMovementsResponseItem = zod.object({
   toWarehouseId: zod.number().nullish(),
   movedById: zod.number(),
   reason: zod.string().nullish(),
-  movementType: zod.string().optional(),
+  movementType: zod.enum(["inbound", "outbound", "transfer", "reserve", "adjustment"]).optional(),
+  fromWarehouseLocationId: zod.number().nullish(),
+  toWarehouseLocationId: zod.number().nullish(),
   movedAt: zod.string(),
   createdAt: zod.string(),
 });
@@ -930,8 +932,11 @@ export const ListWarehouseMovementsResponse = zod.array(
  */
 export const CreateWarehouseMovementBody = zod.object({
   fabricRollId: zod.number(),
+  movementType: zod.enum(["inbound", "outbound", "transfer", "reserve", "adjustment"]).optional(),
   fromWarehouseId: zod.number().optional(),
-  toWarehouseId: zod.number(),
+  toWarehouseId: zod.number().optional(),
+  fromWarehouseLocationId: zod.number().optional(),
+  toWarehouseLocationId: zod.number().optional(),
   reason: zod.string().optional(),
 });
 

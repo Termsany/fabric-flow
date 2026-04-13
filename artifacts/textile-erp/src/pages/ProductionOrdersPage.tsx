@@ -18,15 +18,17 @@ export function ProductionOrdersPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
+  const [formError, setFormError] = useState("");
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [form, setForm] = useState({
     fabricType: "",
     gsm: "",
     width: "",
     rawColor: "",
     quantity: "",
-    batchId: "",
     notes: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const normalizedSearch = search.trim();
   const { data: orders, isLoading } = useListProductionOrders(normalizedSearch ? { search: normalizedSearch } : {});
@@ -36,13 +38,61 @@ export function ProductionOrdersPage() {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListProductionOrdersQueryKey() });
         setShowCreate(false);
-        setForm({ fabricType: "", gsm: "", width: "", rawColor: "", quantity: "", batchId: "", notes: "" });
+        setForm({ fabricType: "", gsm: "", width: "", rawColor: "", quantity: "", notes: "" });
+        setErrors({});
+        setFormError("");
+        setSubmitAttempted(false);
+      },
+      onError: (error) => {
+        const fallback = t.formSubmitFailed;
+        const payload = (error as { data?: { error?: string } })?.data;
+        setFormError(payload?.error || fallback);
       },
     },
   });
 
+  const requiredFields = [
+    { key: "fabricType", label: t.fabricType },
+    { key: "rawColor", label: t.rawColor },
+    { key: "gsm", label: t.gsm },
+    { key: "width", label: t.width },
+    { key: "quantity", label: t.quantity },
+  ];
+
+  const validateField = (key: string, value: string) => {
+    if (requiredFields.find((field) => field.key === key) && !value.trim()) {
+      return t.fieldRequired.replace("{field}", requiredFields.find((field) => field.key === key)?.label || "");
+    }
+    if (["gsm", "width", "quantity"].includes(key) && value.trim()) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return t.invalidPositiveNumber;
+      }
+    }
+    return "";
+  };
+
+  const validateForm = () => {
+    const nextErrors: Record<string, string> = {};
+    requiredFields.forEach(({ key }) => {
+      const value = form[key as keyof typeof form] as string;
+      const error = validateField(key, value);
+      if (error) {
+        nextErrors[key] = error;
+      }
+    });
+    setErrors(nextErrors);
+    return nextErrors;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError("");
+    setSubmitAttempted(true);
+    const nextErrors = validateForm();
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
     createOrder.mutate({
       data: {
         fabricType: form.fabricType,
@@ -50,7 +100,6 @@ export function ProductionOrdersPage() {
         width: parseFloat(form.width),
         rawColor: form.rawColor,
         quantity: parseInt(form.quantity),
-        batchId: form.batchId || undefined,
         notes: form.notes || undefined,
       },
     });
@@ -91,6 +140,11 @@ export function ProductionOrdersPage() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {formError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {formError}
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-4">
                 {[
                   { key: "fabricType", label: t.fabricType, type: "text" },
@@ -98,17 +152,29 @@ export function ProductionOrdersPage() {
                   { key: "gsm", label: t.gsm, type: "number" },
                   { key: "width", label: t.width, type: "number" },
                   { key: "quantity", label: t.quantity, type: "number" },
-                  { key: "batchId", label: t.batchId, type: "text", optional: true },
                 ].map(({ key, label, type }) => (
                   <div key={key}>
                     <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
                     <input
                       type={type}
                       value={form[key as keyof typeof form]}
-                      onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                      required={key !== "batchId"}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setForm({ ...form, [key]: nextValue });
+                        if (submitAttempted) {
+                          const error = validateField(key, nextValue);
+                          setErrors((prev) => ({ ...prev, [key]: error }));
+                        }
+                      }}
+                      className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        errors[key]
+                          ? "border-rose-300 focus:ring-rose-200"
+                          : "border-slate-300 focus:ring-indigo-500"
+                      }`}
                     />
+                    {errors[key] ? (
+                      <div className="mt-1 text-xs text-rose-600">{errors[key]}</div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -137,6 +203,11 @@ export function ProductionOrdersPage() {
                   {createOrder.isPending ? t.loading : t.save}
                 </button>
               </div>
+              {createOrder.isPending ? (
+                <div className="text-xs text-slate-500">{t.formSubmitting}</div>
+              ) : Object.keys(errors).length > 0 ? (
+                <div className="text-xs text-rose-600">{t.formFixErrors}</div>
+              ) : null}
             </form>
           </div>
         </div>

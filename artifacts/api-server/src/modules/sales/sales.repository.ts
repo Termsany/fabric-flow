@@ -84,6 +84,9 @@ export const salesRepository = {
     fabricRollId: number;
     fromWarehouseId: number | null;
     toWarehouseId: number | null;
+    movementType?: string | null;
+    fromWarehouseLocationId?: number | null;
+    toWarehouseLocationId?: number | null;
     movedById: number;
     reason?: string | null;
     movedAt?: Date;
