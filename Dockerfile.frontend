@@ -12,7 +12,10 @@ COPY artifacts/textile-erp/package.json artifacts/textile-erp/package.json
 COPY lib/api-client-react/package.json lib/api-client-react/package.json
 COPY lib/api-zod/package.json lib/api-zod/package.json
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile \
+  --filter @workspace/textile-erp... \
+  --filter @workspace/api-zod... \
+  --filter @workspace/api-client-react...
 
 COPY artifacts ./artifacts
 COPY lib ./lib

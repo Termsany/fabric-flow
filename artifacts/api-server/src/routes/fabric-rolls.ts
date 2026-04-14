@@ -11,7 +11,8 @@ import {
   salesOrdersTable,
 } from "@workspace/db";
 import { eq, and, desc, ilike, SQL, sql, or } from "drizzle-orm";
-import { requireAuth, requireTenantRole } from "../lib/auth";
+import { requireAuth } from "../lib/auth";
+import { requireOperationalAccess } from "../lib/tenant-rbac";
 import { formatValidationError } from "../lib/request-validation";
 import {
   ListFabricRollsQueryParams,
@@ -417,7 +418,7 @@ async function formatDetailedRollResponse(
 router.get(
   "/fabric-rolls",
   requireAuth,
-  requireTenantRole(["production_user", "qc_user", "dyeing_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   async (req, res): Promise<void> => {
   const params = ListFabricRollsQueryParams.safeParse(req.query);
   if (!params.success) {
@@ -457,7 +458,7 @@ router.get(
 router.get(
   "/fabric-rolls/by-code/:rollCode",
   requireAuth,
-  requireTenantRole(["production_user", "qc_user", "dyeing_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   async (req, res): Promise<void> => {
   const params = GetFabricRollByCodeParams.safeParse(req.params);
   if (!params.success) {
@@ -480,7 +481,7 @@ router.get(
 router.get(
   "/fabric-rolls/:id",
   requireAuth,
-  requireTenantRole(["production_user", "qc_user", "dyeing_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   async (req, res): Promise<void> => {
   const params = GetFabricRollParams.safeParse(req.params);
   if (!params.success) {
@@ -503,7 +504,7 @@ router.get(
 router.patch(
   "/fabric-rolls/:id",
   requireAuth,
-  requireTenantRole(["production_user", "qc_user", "dyeing_user", "warehouse_user"]),
+  requireOperationalAccess("fabric_rolls", "write"),
   async (req, res): Promise<void> => {
   const params = UpdateFabricRollParams.safeParse(req.params);
   if (!params.success) {

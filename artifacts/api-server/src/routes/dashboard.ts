@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, fabricRollsTable, productionOrdersTable, dyeingOrdersTable, salesOrdersTable, customersTable, auditLogsTable, usersTable, qcReportsTable, tenantsTable } from "@workspace/db";
 import { eq, and, count, desc, sql, gte } from "drizzle-orm";
-import { requireAuth, requireTenantAdmin, requireTenantRole } from "../lib/auth";
+import { requireAuth, requireTenantAdmin } from "../lib/auth";
+import { requireOperationalAccess } from "../lib/tenant-rbac";
 import { checkPlanAccess } from "../lib/billing";
 import {
   GetDashboardStatsResponse,
@@ -19,7 +20,7 @@ const router = Router();
 router.get(
   "/dashboard/stats",
   requireAuth,
-  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;
 
@@ -104,7 +105,7 @@ router.get(
 router.get(
   "/dashboard/roll-status-breakdown",
   requireAuth,
-  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;
 
@@ -121,7 +122,7 @@ router.get(
 router.get(
   "/dashboard/recent-activity",
   requireAuth,
-  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   checkPlanAccess("pro"),
   async (req, res): Promise<void> => {
   const params = GetRecentActivityQueryParams.safeParse(req.query);
@@ -160,7 +161,7 @@ router.get(
 router.get(
   "/dashboard/production-by-month",
   requireAuth,
-  requireTenantRole(["production_user", "dyeing_user", "qc_user", "warehouse_user", "sales_user"]),
+  requireOperationalAccess("fabric_rolls", "read"),
   checkPlanAccess("pro"),
   async (req, res): Promise<void> => {
   const tenantId = req.user!.tenantId;

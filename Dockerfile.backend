@@ -4,9 +4,18 @@ WORKDIR /app
 
 RUN npm install -g pnpm@10.33.0
 
-COPY . .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY artifacts/api-server/package.json artifacts/api-server/package.json
+COPY lib/db/package.json lib/db/package.json
+COPY lib/api-zod/package.json lib/api-zod/package.json
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+
+COPY artifacts ./artifacts
+COPY lib ./lib
+COPY scripts ./scripts
+COPY docker ./docker
+
 RUN pnpm --filter @workspace/api-server run build
 
 FROM node:24-bookworm-slim AS runtime
@@ -14,8 +23,6 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
-
-RUN npm install -g pnpm@10.33.0
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
@@ -26,6 +33,7 @@ COPY --from=builder /app/artifacts/api-server/dist ./artifacts/api-server/dist
 COPY --from=builder /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
 COPY --from=builder /app/artifacts/api-server/package.json ./artifacts/api-server/package.json
 COPY --from=builder /app/lib/db ./lib/db
+COPY --from=builder /app/lib/api-zod ./lib/api-zod
 COPY docker/start-backend.sh ./docker/start-backend.sh
 
 EXPOSE 8080

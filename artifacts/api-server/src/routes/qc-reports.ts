@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db, qcReportsTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
 import { getFabricRollStatusFromQcResult } from "@workspace/api-zod";
 import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
-import { requireAuth, requireTenantRole } from "../lib/auth";
+import { requireAuth } from "../lib/auth";
+import { requireOperationalAccess } from "../lib/tenant-rbac";
 import { checkPlanAccess } from "../lib/billing";
 import { formatValidationError } from "../lib/request-validation";
 import {
@@ -96,7 +97,7 @@ function parseOptionalDate(value: string | undefined) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-router.get("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/qc-reports", requireAuth, requireOperationalAccess("qc", "read"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = ListQcReportsQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: formatValidationError(params.error) });
@@ -116,7 +117,7 @@ router.get("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPlan
   res.json(ListQcReportsResponse.parse(reports.map((report) => formatReport(report))));
 });
 
-router.get("/qc-reports/summary", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/qc-reports/summary", requireAuth, requireOperationalAccess("qc", "read"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = GetQcReportSummaryQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: formatValidationError(params.error) });
@@ -152,7 +153,7 @@ router.get("/qc-reports/summary", requireAuth, requireTenantRole(["qc_user"]), c
   })));
 });
 
-router.post("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.post("/qc-reports", requireAuth, requireOperationalAccess("qc", "write"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const parsed = parseCreateQcReportBody(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatValidationError(parsed.error) });
@@ -243,7 +244,7 @@ router.post("/qc-reports", requireAuth, requireTenantRole(["qc_user"]), checkPla
   }
 });
 
-router.get("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/qc-reports/:id", requireAuth, requireOperationalAccess("qc", "read"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = GetQcReportParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -262,7 +263,7 @@ router.get("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), check
   res.json(GetQcReportResponse.parse(formatReport(report)));
 });
 
-router.patch("/qc-reports/:id", requireAuth, requireTenantRole(["qc_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.patch("/qc-reports/:id", requireAuth, requireOperationalAccess("qc", "write"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = UpdateQcReportParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });

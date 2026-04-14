@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireTenantRole } from "../../lib/auth";
+import { requireAuth } from "../../lib/auth";
 import { checkSubscription } from "../../lib/billing";
+import { requireOperationalAccess } from "../../lib/tenant-rbac";
 import { warehousesController } from "./warehouses.controller";
 
 export type WarehousesRoutesDependencies = {
@@ -20,19 +21,19 @@ function registerWarehouseRoutes(
   router.get(
     "/warehouses/inventory-report",
     deps.requireAuth,
-    requireTenantRole(["warehouse_user"]),
+    requireOperationalAccess("warehouse", "read"),
     deps.warehousesController.getInventoryReport,
   );
-  router.get("/warehouses", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.listWarehouses);
+  router.get("/warehouses", deps.requireAuth, requireOperationalAccess("warehouse", "read"), deps.warehousesController.listWarehouses);
   router.post(
     "/warehouses",
     deps.requireAuth,
-    requireTenantRole(["warehouse_user"]),
+    requireOperationalAccess("warehouse", "write"),
     deps.checkSubscription(),
     deps.warehousesController.createWarehouse,
   );
-  router.get("/warehouses/:id", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.getWarehouse);
-  router.patch("/warehouses/:id", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.updateWarehouse);
+  router.get("/warehouses/:id", deps.requireAuth, requireOperationalAccess("warehouse", "read"), deps.warehousesController.getWarehouse);
+  router.patch("/warehouses/:id", deps.requireAuth, requireOperationalAccess("warehouse", "write"), deps.warehousesController.updateWarehouse);
 }
 
 function registerWarehouseMovementRoutes(
@@ -42,8 +43,8 @@ function registerWarehouseMovementRoutes(
     warehousesController: typeof warehousesController;
   },
 ) {
-  router.get("/warehouse-movements", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.listWarehouseMovements);
-  router.post("/warehouse-movements", deps.requireAuth, requireTenantRole(["warehouse_user"]), deps.warehousesController.createWarehouseMovement);
+  router.get("/warehouse-movements", deps.requireAuth, requireOperationalAccess("warehouse", "read"), deps.warehousesController.listWarehouseMovements);
+  router.post("/warehouse-movements", deps.requireAuth, requireOperationalAccess("warehouse", "write"), deps.warehousesController.createWarehouseMovement);
 }
 
 export function createWarehousesRoutes(

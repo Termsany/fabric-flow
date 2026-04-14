@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireTenantRole } from "../../lib/auth";
+import { requireAuth } from "../../lib/auth";
 import { checkPlanAccess } from "../../lib/billing";
+import { requireOperationalAccess } from "../../lib/tenant-rbac";
 import { salesController } from "./sales.controller";
 
 export type SalesRoutesDependencies = {
@@ -19,16 +20,16 @@ export function createSalesRoutes(deps: SalesRoutesDependencies = {
   const planAccess = deps.checkPlanAccess;
   const controller = deps.salesController;
 
-  router.get("/customers", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.listCustomers);
-  router.post("/customers", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.createCustomer);
-  router.get("/customers/:id", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.getCustomer);
-  router.patch("/customers/:id", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.updateCustomer);
+  router.get("/customers", auth, requireOperationalAccess("sales", "read"), planAccess("pro"), controller.listCustomers);
+  router.post("/customers", auth, requireOperationalAccess("sales", "write"), planAccess("pro"), controller.createCustomer);
+  router.get("/customers/:id", auth, requireOperationalAccess("sales", "read"), planAccess("pro"), controller.getCustomer);
+  router.patch("/customers/:id", auth, requireOperationalAccess("sales", "write"), planAccess("pro"), controller.updateCustomer);
 
-  router.get("/sales-orders", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.listSalesOrders);
-  router.get("/sales-orders/report", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.getSalesReport);
-  router.post("/sales-orders", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.createSalesOrder);
-  router.get("/sales-orders/:id", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.getSalesOrder);
-  router.patch("/sales-orders/:id", auth, requireTenantRole(["sales_user"]), planAccess("pro"), controller.updateSalesOrder);
+  router.get("/sales-orders", auth, requireOperationalAccess("sales", "read"), planAccess("pro"), controller.listSalesOrders);
+  router.get("/sales-orders/report", auth, requireOperationalAccess("sales", "read"), planAccess("pro"), controller.getSalesReport);
+  router.post("/sales-orders", auth, requireOperationalAccess("sales", "write"), planAccess("pro"), controller.createSalesOrder);
+  router.get("/sales-orders/:id", auth, requireOperationalAccess("sales", "read"), planAccess("pro"), controller.getSalesOrder);
+  router.patch("/sales-orders/:id", auth, requireOperationalAccess("sales", "write"), planAccess("pro"), controller.updateSalesOrder);
 
   return router;
 }

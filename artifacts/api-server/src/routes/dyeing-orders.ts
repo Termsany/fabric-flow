@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db, dyeingOrdersTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
 import { DYEING_WORKFLOW_STATUS, FABRIC_ROLL_WORKFLOW_STATUS, WORKFLOW_DEFAULTS } from "@workspace/api-zod";
 import { eq, and, desc, ilike, inArray, or } from "drizzle-orm";
-import { requireAuth, requireTenantRole } from "../lib/auth";
+import { requireAuth } from "../lib/auth";
+import { requireOperationalAccess } from "../lib/tenant-rbac";
 import { checkPlanAccess } from "../lib/billing";
 import { formatValidationError } from "../lib/request-validation";
 import {
@@ -66,7 +67,7 @@ function respondWorkflowTransitionError(
   return false;
 }
 
-router.get("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/dyeing-orders", requireAuth, requireOperationalAccess("dyeing", "read"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = ListDyeingOrdersQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: formatValidationError(params.error) });
@@ -97,7 +98,7 @@ router.get("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), ch
   res.json(ListDyeingOrdersResponse.parse(orders.map((order) => formatDyeingOrderResponse(order))));
 });
 
-router.post("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.post("/dyeing-orders", requireAuth, requireOperationalAccess("dyeing", "write"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const parsed = CreateDyeingOrderBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatValidationError(parsed.error) });
@@ -161,7 +162,7 @@ router.post("/dyeing-orders", requireAuth, requireTenantRole(["dyeing_user"]), c
   }
 });
 
-router.get("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.get("/dyeing-orders/:id", requireAuth, requireOperationalAccess("dyeing", "read"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = GetDyeingOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -180,7 +181,7 @@ router.get("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"])
   res.json(GetDyeingOrderResponse.parse(await formatDetailedDyeingOrder(order)));
 });
 
-router.patch("/dyeing-orders/:id", requireAuth, requireTenantRole(["dyeing_user"]), checkPlanAccess("pro"), async (req, res): Promise<void> => {
+router.patch("/dyeing-orders/:id", requireAuth, requireOperationalAccess("dyeing", "write"), checkPlanAccess("pro"), async (req, res): Promise<void> => {
   const params = UpdateDyeingOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });

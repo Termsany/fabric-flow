@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db, productionOrdersTable, fabricRollsTable, auditLogsTable } from "@workspace/db";
 import { FABRIC_ROLL_WORKFLOW_STATUS, PRODUCTION_ORDER_WORKFLOW_STATUS } from "@workspace/api-zod";
 import { eq, and, desc, ilike, or, like } from "drizzle-orm";
-import { requireAuth, requireTenantRole } from "../lib/auth";
+import { requireAuth } from "../lib/auth";
+import { requireOperationalAccess } from "../lib/tenant-rbac";
 import { formatValidationError } from "../lib/request-validation";
 import {
   ListProductionOrdersQueryParams,
@@ -127,7 +128,7 @@ async function generateNextBatchId() {
   return computeNextBatchId(latest?.batchId ?? null, new Date());
 }
 
-router.get("/production-orders", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
+router.get("/production-orders", requireAuth, requireOperationalAccess("production", "read"), async (req, res): Promise<void> => {
   const params = ListProductionOrdersQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: formatValidationError(params.error) });
@@ -162,7 +163,7 @@ router.get("/production-orders", requireAuth, requireTenantRole(["production_use
   res.json(ListProductionOrdersResponse.parse(orders.map(formatOrder)));
 });
 
-router.post("/production-orders", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
+router.post("/production-orders", requireAuth, requireOperationalAccess("production", "write"), async (req, res): Promise<void> => {
   const parsed = parseCreateProductionOrderBody(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatValidationError(parsed.error) });
@@ -260,7 +261,7 @@ router.post("/production-orders", requireAuth, requireTenantRole(["production_us
   }
 });
 
-router.get("/production-orders/:id", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
+router.get("/production-orders/:id", requireAuth, requireOperationalAccess("production", "read"), async (req, res): Promise<void> => {
   const params = GetProductionOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -287,7 +288,7 @@ router.get("/production-orders/:id", requireAuth, requireTenantRole(["production
   }
 });
 
-router.patch("/production-orders/:id", requireAuth, requireTenantRole(["production_user"]), async (req, res): Promise<void> => {
+router.patch("/production-orders/:id", requireAuth, requireOperationalAccess("production", "write"), async (req, res): Promise<void> => {
   const params = UpdateProductionOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
